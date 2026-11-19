@@ -266,11 +266,12 @@ struct SoundCloudWebView: UIViewRepresentable {
         controller.webView = webView
         controller.applyUserAgent(desktopMode: settings.desktopMode)
 
-        // Wire Lock Screen / Control Center / AirPods remote commands
+        // Wire Lock Screen / Control Center / AirPods remote commands (Play, Skip Track, & Scrubbing!)
         let ctrl = controller
         nowPlaying.onPlayPause = { [weak ctrl] in ctrl?.togglePlayPause() }
         nowPlaying.onNextTrack = { [weak ctrl] in ctrl?.nextTrack() }
         nowPlaying.onPreviousTrack = { [weak ctrl] in ctrl?.previousTrack() }
+        nowPlaying.onSeekFraction = { [weak ctrl] fraction in ctrl?.seek(toFraction: fraction) }
 
         context.coordinator.observe(webView: webView)
 

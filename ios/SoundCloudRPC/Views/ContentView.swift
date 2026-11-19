@@ -83,7 +83,7 @@ struct ContentView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView(webController: webController)
         }
-        .sheet(isPresented: $showingNowPlaying) {
+        .fullScreenCover(isPresented: $showingNowPlaying) {
             NowPlayingSheetView(
                 webController: webController,
                 settings: settings,

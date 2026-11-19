@@ -128,17 +128,68 @@ enum WebViewScripts {
         }
       }
 
+      function syncMediaSessionHandlers() {
+        if (!('mediaSession' in navigator)) return;
+        try {
+          navigator.mediaSession.setActionHandler('seekbackward', null);
+          navigator.mediaSession.setActionHandler('seekforward', null);
+          navigator.mediaSession.setActionHandler('previoustrack', () => {
+            const btn = document.querySelector('.skipControl__previous');
+            if (btn) btn.click();
+          });
+          navigator.mediaSession.setActionHandler('nexttrack', () => {
+            const btn = document.querySelector('.skipControl__next');
+            if (btn) btn.click();
+          });
+          navigator.mediaSession.setActionHandler('play', () => {
+            const btn = document.querySelector('.playControls__play, .playControl');
+            if (btn && !btn.classList.contains('playing')) btn.click();
+          });
+          navigator.mediaSession.setActionHandler('pause', () => {
+            const btn = document.querySelector('.playControls__play, .playControl');
+            if (btn && btn.classList.contains('playing')) btn.click();
+          });
+          navigator.mediaSession.setActionHandler('seekto', (details) => {
+            if (!details || typeof details.seekTime !== 'number') return;
+            const audio = document.querySelector('audio');
+            if (audio && isFinite(audio.duration) && audio.duration > 0) {
+              audio.currentTime = Math.max(0, Math.min(audio.duration, details.seekTime));
+              return;
+            }
+            const durationEl = document.querySelector('.playbackTimeline__duration span:last-child');
+            const bar = document.querySelector('.playbackTimeline__progressWrapper');
+            if (bar && durationEl) {
+              const parts = durationEl.textContent.trim().replace(/^-/, '').split(':').map(Number);
+              let totalSec = 0;
+              for (const p of parts) totalSec = totalSec * 60 + (isNaN(p) ? 0 : p);
+              if (totalSec > 0) {
+                const frac = Math.max(0, Math.min(1, details.seekTime / totalSec));
+                const rect = bar.getBoundingClientRect();
+                const x = rect.left + rect.width * frac;
+                const y = rect.top + rect.height / 2;
+                ['mousedown', 'mouseup', 'click'].forEach((type) => {
+                  bar.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+                });
+              }
+            }
+          });
+        } catch (e) {}
+      }
+
       setInterval(() => {
         attachObservers();
+        syncMediaSessionHandlers();
         notifyPlaybackStateChange(false);
       }, 800);
 
       if (document.readyState === 'complete' || document.readyState === 'interactive') {
         attachObservers();
+        syncMediaSessionHandlers();
         notifyPlaybackStateChange(true);
       } else {
         document.addEventListener('DOMContentLoaded', () => {
           attachObservers();
+          syncMediaSessionHandlers();
           notifyPlaybackStateChange(true);
         });
       }
@@ -474,17 +525,41 @@ enum WebViewScripts {
             margin-top: 2px !important;
         }
 
-        /* === CLEAN 2-COLUMN (iPhone) / 4-COLUMN (iPad) LIBRARY GRID === */
+        /* === CLEAN 2-COLUMN (iPhone) / 4-COLUMN (iPad) LIBRARY GRID (NO GIANT GAPS!) === */
+        .collectionSection__top,
+        .collectionSection__filters,
+        .userLikes__header {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 8px !important;
+            margin-bottom: 14px !important;
+        }
+        .collectionSection__top .sc-input,
+        .collectionSection__filterInput,
+        .collectionSection__viewToggle,
+        .collectionSection__top input {
+            display: none !important;
+        }
+
         .badgeList,
-        .lazyLoadingList__list {
+        .userLikes .lazyLoadingList__list,
+        .collectionSection .lazyLoadingList__list,
+        .userNetwork .lazyLoadingList__list {
             display: grid !important;
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            gap: 14px !important;
+            column-gap: 14px !important;
+            row-gap: 18px !important;
             width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
         @media (min-width: 700px) {
             .badgeList,
-            .lazyLoadingList__list {
+            .userLikes .lazyLoadingList__list,
+            .collectionSection .lazyLoadingList__list,
+            .userNetwork .lazyLoadingList__list {
                 grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
             }
             .tileGallery__slide,
@@ -505,25 +580,66 @@ enum WebViewScripts {
         .trackList__list {
             display: flex !important;
             flex-direction: column !important;
-            gap: 10px !important;
+            gap: 12px !important;
         }
+        /* Ensure loading spinners span full width instead of sitting in a ghost grid column */
+        .loading,
+        .lazyLoadingList__loading,
+        .paging-eof {
+            grid-column: 1 / -1 !important;
+            width: 100% !important;
+            margin: 18px auto !important;
+        }
+
         .badgeList__item {
             width: 100% !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            height: auto !important;
+            float: none !important;
             margin: 0 !important;
             padding: 0 !important;
+            box-sizing: border-box !important;
         }
-        .badgeList__item .playableTile__artwork,
-        .badgeList__item .image {
+        .badgeList__item .playableTile {
             width: 100% !important;
-            aspect-ratio: 1 / 1 !important;
             height: auto !important;
-            border-radius: 10px !important;
-            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
         }
-        /* Tone down SoundCloud's huge blocky white square pause overlay on thumbnails */
+        /* Neutralize SoundCloud's desktop padding-bottom/fixed-height mismatch that caused giant vertical gaps */
+        .badgeList__item .playableTile__artwork {
+            position: relative !important;
+            width: 100% !important;
+            height: auto !important;
+            aspect-ratio: 1 / 1 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border-radius: 12px !important;
+            overflow: hidden !important;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.32) !important;
+        }
+        .badgeList__item .playableTile__artworkLink,
+        .badgeList__item .playableTile__artwork .image,
+        .badgeList__item .playableTile__artwork .image__full {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background-size: cover !important;
+            background-position: center !important;
+        }
+        .badgeList__item .playableTile__description {
+            margin-top: 8px !important;
+            padding: 0 2px !important;
+            position: static !important;
+            height: auto !important;
+        }
         .playableTile__playButton .sc-button-play {
             border-radius: 50% !important;
-            transform: scale(0.78) !important;
+            transform: scale(0.74) !important;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
         }
 
@@ -563,35 +679,131 @@ enum WebViewScripts {
             margin: 0 !important;
         }
 
-        /* === CLEAN TRACK ROWS & FEED CARDS === */
+        /* === MESHED FEED & SEARCH TRACK CARDS (Artwork BESIDE Play + Title, Waveform Below!) === */
         .soundList__item {
-            border-bottom: 1px solid rgba(255,255,255,0.06) !important;
-            padding: 10px 0 !important;
+            border: none !important;
+            padding: 0 !important;
             margin: 0 !important;
         }
+        .soundContext {
+            margin: 0 0 6px 4px !important;
+            font-size: 12px !important;
+            opacity: 0.72 !important;
+        }
         .sound__body {
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 8px !important;
+            display: grid !important;
+            grid-template-columns: 60px minmax(0, 1fr) !important;
+            column-gap: 12px !important;
+            row-gap: 10px !important;
+            align-items: center !important;
+            background: rgba(255, 255, 255, 0.045) !important;
+            border: 1px solid rgba(255, 255, 255, 0.06) !important;
+            border-radius: 14px !important;
+            padding: 12px !important;
+            box-sizing: border-box !important;
+        }
+        html.theme-light .sound__body {
+            background: rgba(0, 0, 0, 0.035) !important;
+            border-color: rgba(0, 0, 0, 0.07) !important;
         }
         .sound__coverArt {
-            width: 68px !important;
-            height: 68px !important;
-            border-radius: 8px !important;
+            grid-column: 1 !important;
+            grid-row: 1 !important;
+            float: none !important;
+            margin: 0 !important;
+            width: 60px !important;
+            height: 60px !important;
+            border-radius: 10px !important;
             overflow: hidden !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+        }
+        .sound__coverArt .image,
+        .sound__coverArt .image__full {
+            width: 60px !important;
+            height: 60px !important;
+            padding: 0 !important;
+            background-size: cover !important;
+        }
+        /* Promote header, waveform, footer into the card grid so artwork meshes directly beside title! */
+        .sound__content {
+            display: contents !important;
+        }
+        .sound__header {
+            grid-column: 2 !important;
+            grid-row: 1 !important;
+            min-width: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .soundTitle__titleContainer {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            min-width: 0 !important;
+        }
+        .soundTitle__playButton {
+            flex-shrink: 0 !important;
+            margin: 0 !important;
+        }
+        .soundTitle__usernameTitleContainer {
+            min-width: 0 !important;
+            flex: 1 !important;
+        }
+        .soundTitle__username {
+            font-size: 12.5px !important;
+            opacity: 0.72 !important;
         }
         .soundTitle__title {
             font-size: 15px !important;
-            font-weight: 600 !important;
-            line-height: 1.3 !important;
+            font-weight: 700 !important;
+            line-height: 1.25 !important;
+            display: -webkit-box !important;
+            -webkit-line-clamp: 2 !important;
+            -webkit-box-orient: vertical !important;
+            overflow: hidden !important;
             white-space: normal !important;
         }
-        .soundActions .sc-button-group {
+        .soundTitle__additionalContainer {
+            margin-left: 6px !important;
+            flex-shrink: 0 !important;
+        }
+        .sound__waveform {
+            grid-column: 1 / -1 !important;
+            grid-row: 2 !important;
+            margin: 0 !important;
+            min-height: 44px !important;
+        }
+        .waveformCommentsNode,
+        .commentBadgeList {
+            display: none !important;
+        }
+        .sound__footer {
+            grid-column: 1 / -1 !important;
+            grid-row: 3 !important;
+            margin: 0 !important;
+            padding-top: 4px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
             flex-wrap: wrap !important;
+            gap: 8px !important;
+        }
+        .soundActions .sc-button-group {
+            display: flex !important;
+            flex-wrap: nowrap !important;
             gap: 6px !important;
         }
         .sc-button {
             border-radius: 999px !important;
+        }
+
+        /* Clean Playlist Track Rows */
+        .trackList__item {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            padding: 8px 6px !important;
+            border-bottom: 1px solid rgba(255,255,255,0.06) !important;
         }
 
         /* Clean empty search prompt */
