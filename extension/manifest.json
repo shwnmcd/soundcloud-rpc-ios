@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "SoundCloud RPC + AdBlocker",
+  "version": "1.0.0",
+  "description": "SoundCloud client enhancements in your browser: AdBlocker, Dark Mode, Custom CSS Themes, Track Parser, Last.fm Scrobbling & Webhooks.",
+  "icons": {
+    "128": "icon-128.png"
+  },
+  "permissions": [
+    "storage",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://soundcloud.com/*",
+    "https://*.soundcloud.com/*",
+    "https://ws.audioscrobbler.com/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "sc_adblock_rules",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://soundcloud.com/*", "https://m.soundcloud.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon-128.png"
+  }
+}

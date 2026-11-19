@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#FF5500" />
+  <title>SoundCloud RPC — Browser &amp; Mobile Companion</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://w.soundcloud.com/player/api.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="./icons/icon-192.png" alt="SoundCloud RPC" class="brand-icon" />
+      <div>
+        <h1>SoundCloud RPC</h1>
+        <span class="subtitle">Web &amp; iOS/iPadOS Companion</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span id="adblockBadge" class="badge badge-orange">🛡️ AdBlock Rules Ready</span>
+      <button id="themeToggleBtn" class="btn btn-ghost" title="Toggle Dark/Light Mode">🌙 Dark</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Left Column: SoundCloud Player & Discord Rich Presence Preview -->
+    <section class="column">
+      <div class="card">
+        <div class="card-header">
+          <h2>🎧 SoundCloud Web Player</h2>
+          <span id="playbackPill" class="pill">Idle</span>
+        </div>
+        <form id="loadUrlForm" class="url-bar">
+          <input
+            id="scUrlInput"
+            type="url"
+            placeholder="Paste any SoundCloud track, artist, or playlist URL..."
+            value="https://soundcloud.com/monstercat"
+            required
+          />
+          <button type="submit" class="btn btn-primary">Load</button>
+        </form>
+
+        <div class="player-frame-wrap">
+          <iframe
+            id="scWidget"
+            title="SoundCloud Player"
+            allow="autoplay"
+            scrolling="no"
+            frameborder="no"
+            src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/monstercat&color=%23ff5500&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=false"
+          ></iframe>
+        </div>
+        <p class="hint">
+          Tip: On iPhone/iPad use the native <strong>SoundCloudRPC.ipa</strong> (via AltStore) for full <code>soundcloud.com</code> browsing + WebKit AdBlocker, or load <code>extension/</code> in Chrome/Edge on PC.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>🎮 Discord Rich Presence Preview</h2>
+          <label class="switch-inline">
+            <input type="checkbox" id="optRpcEnabled" checked />
+            <span>Enabled</span>
+          </label>
+        </div>
+
+        <div id="rpcPreviewCard" class="discord-card">
+          <div class="discord-empty">Play a track above to preview live Discord Rich Presence</div>
+        </div>
+
+        <div class="toggles-grid">
+          <label class="check-row"><input type="checkbox" id="optTrackParser" checked /> Smart Track Parser (Artist - Title)</label>
+          <label class="check-row"><input type="checkbox" id="optUseArtistHeader" checked /> Artist Name in Status Line</label>
+          <label class="check-row"><input type="checkbox" id="optDisplaySmallIcon" checked /> Small SoundCloud Badge</label>
+          <label class="check-row"><input type="checkbox" id="optDisplayButtons" checked /> "Listen on SoundCloud" Button</label>
+          <label class="check-row"><input type="checkbox" id="optDisplayPaused" /> Show Activity When Paused</label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>✂️ Track Parser Tester</h2>
+        </div>
+        <div class="form-row">
+          <input id="parserTestTitle" type="text" value="Daft Punk — Instant Crush (feat. Julian Casablancas)" placeholder="SoundCloud track title" />
+          <input id="parserTestAuthor" type="text" value="OfficialChannel" placeholder="Uploader name" />
+        </div>
+        <div id="parserOutput" class="code-box"></div>
+      </div>
+    </section>
+
+    <!-- Right Column: Tabs for Last.fm, Webhooks, Themes, AdBlocker -->
+    <section class="column">
+      <div class="card">
+        <nav class="tabs" role="tablist">
+          <button class="tab active" data-tab="tab-webhooks">🔔 Webhooks</button>
+          <button class="tab" data-tab="tab-lastfm">📻 Last.fm</button>
+          <button class="tab" data-tab="tab-themes">🎨 Themes</button>
+          <button class="tab" data-tab="tab-adblock">🛡️ AdBlocker</button>
+        </nav>
+
+        <!-- Webhooks -->
+        <div id="tab-webhooks" class="tab-panel active">
+          <label class="check-row"><input type="checkbox" id="whEnabled" /> Enable Webhooks</label>
+          <label class="field">
+            <span>Webhook URL (Custom or Discord Webhook)</span>
+            <input type="url" id="whUrl" placeholder="https://discord.com/api/webhooks/..." />
+          </label>
+          <label class="check-row"><input type="checkbox" id="whDiscordFormat" /> Format as Discord Rich Embed</label>
+          <label class="field">
+            <span>Trigger at Playback Percentage: <strong id="whPercentVal">50%</strong></span>
+            <input type="range" id="whPercent" min="0" max="100" step="5" value="50" />
+          </label>
+          <div class="actions-row">
+            <button id="whTestBtn" class="btn btn-primary">Send Test Payload</button>
+            <span id="whStatus" class="status-text"></span>
+          </div>
+          <pre class="code-box" id="whExamplePayload"></pre>
+        </div>
+
+        <!-- Last.fm -->
+        <div id="tab-lastfm" class="tab-panel">
+          <div class="status-banner" id="lfmBanner">Status: Not Connected</div>
+          <label class="check-row"><input type="checkbox" id="lfmEnabled" /> Enable Last.fm Scrobbling</label>
+          <label class="field">
+            <span>Last.fm API Key</span>
+            <input type="text" id="lfmKey" placeholder="Your Last.fm API Key" />
+          </label>
+          <label class="field">
+            <span>Last.fm API Secret</span>
+            <input type="password" id="lfmSecret" placeholder="Your Last.fm Shared Secret" />
+          </label>
+          <div class="actions-row">
+            <button id="lfmAuthBtn" class="btn btn-primary">Authenticate with Last.fm</button>
+            <button id="lfmDisconnectBtn" class="btn btn-ghost">Disconnect</button>
+          </div>
+          <p class="hint">
+            Create an API account at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noreferrer">last.fm/api/account/create</a>. Tracks scrobble automatically at 50% duration (or 4 minutes).
+          </p>
+        </div>
+
+        <!-- Custom Themes -->
+        <div id="tab-themes" class="tab-panel">
+          <p class="hint">
+            Author custom <code>.css</code> themes compatible with both the <strong>iPhone/iPad App</strong> and <strong>Desktop Extension</strong>. Export and drop into the iOS Files app under <code>SoundCloud RPC/themes/</code>.
+          </p>
+          <label class="field">
+            <span>CSS Theme Source</span>
+            <textarea id="themeCssInput" rows="11">/*
+ * @name Midnight OLED
+ * @author SoundCloud RPC
+ * @version 1.0.0
+ * @description True black OLED theme with SoundCloud orange highlights
+ */
+/* @target content */
+html, body, .l-container, .playControls__bg {
+  background-color: #000000 !important;
+  color: #f5f5f5 !important;
+}</textarea>
+          </label>
+          <div id="themeMetaBox" class="code-box"></div>
+          <div class="actions-row">
+            <button id="exportThemeBtn" class="btn btn-primary">Download .css for iOS / Desktop</button>
+          </div>
+        </div>
+
+        <!-- AdBlocker Inspector -->
+        <div id="tab-adblock" class="tab-panel">
+          <p class="hint">
+            These exact network &amp; cosmetic filters power the native <strong>iOS WKContentRuleList</strong> engine (iPhone/iPad app) and <strong>Manifest V3 declarativeNetRequest</strong> (Desktop Chrome/Edge extension).
+          </p>
+          <div class="stats-row">
+            <div class="stat-pill"><strong id="domainRuleCount">0</strong><span>Blocked Ad &amp; Tracker Domains</span></div>
+            <div class="stat-pill"><strong id="cosmeticRuleCount">0</strong><span>Cosmetic Ad Selectors</span></div>
+          </div>
+          <div id="adblockList" class="rule-list"></div>
+          <div class="actions-row">
+            <button id="exportContentBlockerBtn" class="btn btn-primary">Export Safari Content Blocker JSON</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
