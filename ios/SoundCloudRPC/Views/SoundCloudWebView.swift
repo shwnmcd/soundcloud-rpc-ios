@@ -29,6 +29,23 @@ final class WebViewController: ObservableObject {
         load(urlString: "https://soundcloud.com/discover")
     }
 
+    func loadFeed() {
+        load(urlString: "https://soundcloud.com/feed")
+    }
+
+    func loadLibrary() {
+        load(urlString: "https://soundcloud.com/you/library")
+    }
+
+    func loadSearch(query: String = "") {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            load(urlString: "https://soundcloud.com/search")
+        } else if let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            load(urlString: "https://soundcloud.com/search?q=\(encoded)")
+        }
+    }
+
     func load(urlString: String) {
         guard let url = URL(string: urlString) else { return }
         webView?.load(URLRequest(url: url))
@@ -46,9 +63,26 @@ final class WebViewController: ObservableObject {
         webView?.evaluateJavaScript(WebViewScripts.previousTrackJS, completionHandler: nil)
     }
 
-    func applyThemeAndCosmetics(isDark: Bool, customCSS: String?, adBlockerEnabled: Bool) {
+    func toggleLike() {
+        webView?.evaluateJavaScript(WebViewScripts.toggleLikeJS, completionHandler: nil)
+    }
+
+    func toggleShuffle() {
+        webView?.evaluateJavaScript(WebViewScripts.toggleShuffleJS, completionHandler: nil)
+    }
+
+    func cycleRepeat() {
+        webView?.evaluateJavaScript(WebViewScripts.cycleRepeatJS, completionHandler: nil)
+    }
+
+    func seek(toFraction fraction: Double) {
+        webView?.evaluateJavaScript(WebViewScripts.seekToJS(fraction: fraction), completionHandler: nil)
+    }
+
+    func applyThemeAndCosmetics(isDark: Bool, mobileAppLayout: Bool, customCSS: String?, adBlockerEnabled: Bool) {
         let js = WebViewScripts.themeAndCosmeticScript(
             isDark: isDark,
+            mobileAppLayout: mobileAppLayout,
             customCSS: customCSS,
             adBlockerEnabled: adBlockerEnabled
         )
@@ -113,16 +147,9 @@ struct SoundCloudWebView: UIViewRepresentable {
         let ucc = WKUserContentController()
         let weakHandler = WeakScriptMessageHandler(delegate: context.coordinator)
         ucc.add(weakHandler, name: "trackUpdate")
+        ucc.add(weakHandler, name: "adBlocked")
 
-        // Inject audio monitor on every document end
-        let monitorScript = WKUserScript(
-            source: WebViewScripts.audioMonitorScript,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: true
-        )
-        ucc.addUserScript(monitorScript)
-
-        // Inject runtime ad-fetch guard if adBlocker is enabled
+        // Inject 4-layer runtime ad-guard BEFORE SoundCloud's JS initializes
         if settings.adBlockerEnabled {
             let guardScript = WKUserScript(
                 source: WebViewScripts.adBlockerRuntimeGuardScript,
@@ -132,15 +159,24 @@ struct SoundCloudWebView: UIViewRepresentable {
             ucc.addUserScript(guardScript)
         }
 
-        // Inject initial dark mode + custom theme CSS at document end
+        // Inject audio monitor at document end
+        let monitorScript = WKUserScript(
+            source: WebViewScripts.audioMonitorScript,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        ucc.addUserScript(monitorScript)
+
+        // Inject Dark Mode + Mobile App Responsive Layout + AdBlocker Cosmetics + Custom Theme CSS
         let initialThemeJS = WebViewScripts.themeAndCosmeticScript(
             isDark: settings.darkMode,
+            mobileAppLayout: settings.mobileAppLayout,
             customCSS: themePluginManager.activeThemeCSS(selectedName: settings.selectedCustomTheme),
             adBlockerEnabled: settings.adBlockerEnabled
         )
         ucc.addUserScript(WKUserScript(source: initialThemeJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
 
-        // Apply compiled WebKit native Content Rule List (AdBlocker)
+        // Apply compiled WebKit native Content Rule List (AdBlocker Layer 1)
         adBlocker.apply(to: ucc, enabled: settings.adBlockerEnabled)
 
         config.userContentController = ucc
@@ -152,11 +188,18 @@ struct SoundCloudWebView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = settings.darkMode ? UIColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1) : .white
         webView.scrollView.backgroundColor = webView.backgroundColor
+        webView.scrollView.showsHorizontalScrollIndicator = false
+
+        // Native iOS Pull-to-Refresh
+        let refreshControl = UIRefreshControl()
+        refreshControl.tintColor = UIColor.systemOrange
+        refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.handlePullToRefresh(_:)), for: .valueChanged)
+        webView.scrollView.refreshControl = refreshControl
 
         controller.webView = webView
         controller.applyUserAgent(desktopMode: settings.desktopMode)
 
-        // Wire Lock Screen / Control Center remote commands
+        // Wire Lock Screen / Control Center / AirPods remote commands
         let ctrl = controller
         nowPlaying.onPlayPause = { [weak ctrl] in ctrl?.togglePlayPause() }
         nowPlaying.onNextTrack = { [weak ctrl] in ctrl?.nextTrack() }
@@ -184,6 +227,15 @@ struct SoundCloudWebView: UIViewRepresentable {
             self.parent = parent
         }
 
+        @objc func handlePullToRefresh(_ sender: UIRefreshControl) {
+            Task { @MainActor in
+                self.parent.controller.reload()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    sender.endRefreshing()
+                }
+            }
+        }
+
         func observe(webView: WKWebView) {
             observations = [
                 webView.observe(\.canGoBack, options: .new) { [weak self] _, change in
@@ -209,13 +261,13 @@ struct SoundCloudWebView: UIViewRepresentable {
             ]
         }
 
-        // Intercept Last.fm OAuth token callback & block unwanted ad popups
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
             if let url = navigationAction.request.url {
+                // Intercept Last.fm OAuth token redirect automatically
                 if url.host?.contains("soundcloud.com") == true,
                    let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
                    let token = components.queryItems?.first(where: { $0.name == "token" })?.value,
@@ -232,12 +284,14 @@ struct SoundCloudWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            webView.scrollView.refreshControl?.endRefreshing()
             Task { @MainActor in
                 let css = self.parent.themePluginManager.activeThemeCSS(
                     selectedName: self.parent.settings.selectedCustomTheme
                 )
                 self.parent.controller.applyThemeAndCosmetics(
                     isDark: self.parent.settings.darkMode,
+                    mobileAppLayout: self.parent.settings.mobileAppLayout,
                     customCSS: css,
                     adBlockerEnabled: self.parent.settings.adBlockerEnabled
                 )
@@ -245,7 +299,6 @@ struct SoundCloudWebView: UIViewRepresentable {
             }
         }
 
-        // Support OAuth popups (Google/Apple/Facebook sign-in on SoundCloud)
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
@@ -262,6 +315,13 @@ struct SoundCloudWebView: UIViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
+            if message.name == "adBlocked" {
+                Task { @MainActor in
+                    self.parent.adBlocker.recordBlockedAd()
+                }
+                return
+            }
+
             guard message.name == "trackUpdate",
                   let dict = message.body as? [String: Any] else { return }
 
@@ -272,7 +332,10 @@ struct SoundCloudWebView: UIViewRepresentable {
                 elapsed: dict["elapsed"] as? String ?? "0:00",
                 duration: dict["duration"] as? String ?? "0:00",
                 isPlaying: dict["isPlaying"] as? Bool ?? false,
-                url: dict["url"] as? String ?? ""
+                url: dict["url"] as? String ?? "",
+                isLiked: dict["isLiked"] as? Bool ?? false,
+                isShuffling: dict["isShuffling"] as? Bool ?? false,
+                repeatMode: dict["repeatMode"] as? String ?? "none"
             )
 
             Task { @MainActor in

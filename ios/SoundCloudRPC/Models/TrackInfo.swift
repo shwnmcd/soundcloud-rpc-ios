@@ -8,6 +8,9 @@ struct TrackInfo: Equatable, Codable {
     var duration: String = "0:00"
     var isPlaying: Bool = false
     var url: String = ""
+    var isLiked: Bool = false
+    var isShuffling: Bool = false
+    var repeatMode: String = "none" // "none", "one", "all"
 
     var highResArtwork: String {
         artwork
@@ -26,6 +29,11 @@ struct TrackInfo: Equatable, Codable {
             return max(1, elapsedSeconds + abs(parsed))
         }
         return max(0, parsed)
+    }
+
+    var progressFraction: Double {
+        guard durationSeconds > 0 else { return 0 }
+        return min(1.0, max(0.0, elapsedSeconds / durationSeconds))
     }
 
     var isEmpty: Bool {

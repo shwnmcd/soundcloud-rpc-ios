@@ -5,26 +5,59 @@ import WebKit
 final class AdBlockerService: ObservableObject {
     @Published private(set) var isCompiled: Bool = false
     @Published private(set) var ruleCount: Int = 0
+    @Published private(set) var blockedAdsCount: Int = 0
     @Published private(set) var lastError: String?
 
     private(set) var compiledRuleList: WKContentRuleList?
-    private let ruleListIdentifier = "com.soundcloudrpc.adblocker.v1"
+    private let ruleListIdentifier = "com.soundcloudrpc.adblocker.v2"
 
-    /// WebKit Content Blocker JSON rules (compiled natively by WKContentRuleListStore)
+    func recordBlockedAd() {
+        blockedAdsCount += 1
+    }
+
+    /// Expanded WebKit Content Blocker JSON rules targeting SoundCloud audio ads, VAST servers, and display/tracking ad networks
     static let contentBlockerRulesJSON: String = {
         let rules: [[String: Any]] = [
-            // --- SoundCloud Audio / Promoted / Ad Delivery & Telemetry Endpoints ---
-            blockRule(#"^https?://api-v2\.soundcloud\.com/ads(/|\?|$)"#),
-            blockRule(#"^https?://api-v2\.soundcloud\.com/promoted(/|\?|$)"#),
-            blockRule(#"^https?://api\.soundcloud\.com/ads(/|\?|$)"#),
+            // --- SoundCloud Audio Ads, VAST, Promoted & Telemetry Endpoints ---
+            blockRule(#"^https?://api-v2\.soundcloud\.com/.*ads(/|\?|$)"#),
+            blockRule(#"^https?://api-v2\.soundcloud\.com/audio[_-]?ads.*"#),
+            blockRule(#"^https?://api-v2\.soundcloud\.com/ad[_-]?errors.*"#),
+            blockRule(#"^https?://api-v2\.soundcloud\.com/vast.*"#),
+            blockRule(#"^https?://api-v2\.soundcloud\.com/promoted.*"#),
+            blockRule(#"^https?://api-v2\.soundcloud\.com/sponsored.*"#),
+            blockRule(#"^https?://api-v2\.soundcloud\.com/me/ads.*"#),
+            blockRule(#"^https?://api-v2\.soundcloud\.com/monetization/ads.*"#),
+            blockRule(#"^https?://api\.soundcloud\.com/ads.*"#),
+            blockRule(#"^https?://api-mobi\.soundcloud\.com/ads.*"#),
             blockRule(#"^https?://promoted\.soundcloud\.com/.*"#),
             blockRule(#"^https?://eventlogger\.soundcloud\.com/.*"#),
             blockRule(#"^https?://events\.soundcloud\.com/.*"#),
+            blockRule(#"^https?://log\.soundcloud\.com/.*"#),
             blockRule(#"^https?://wis\.sndcdn\.com/.*"#),
-            blockRule(#"^https?://.*soundcloud\.com/.*/ads/.*"#),
+            blockRule(#"^https?://.*soundcloud\.com/.*/audio[_-]?ad.*"#),
             blockRule(#"^https?://.*sndcdn\.com/.*/ad[_-]?audio.*"#),
+            blockRule(#"^https?://.*sndcdn\.com/.*audio[_-]?ad.*"#),
 
-            // --- Major Audio & Display Ad Networks ---
+            // --- Audio Ad Exchanges (SoundCloud Audio Ad Partners: AdsWizz, SXM Media, DAX, Triton, Google IMA/2mdn) ---
+            blockRule(#"^https?://([^/]+\.)?adswizz\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?sxmmedia\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?siriusxm\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?tritondigital\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?dax-ads\.io/.*"#),
+            blockRule(#"^https?://([^/]+\.)?dax\.global\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?instreamatic\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?targetspot\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?2mdn\.net/.*"#),
+            blockRule(#"^https?://([^/]+\.)?innovid\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?flashtalking\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?magnite\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?thetradedesk\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?adform\.net/.*"#),
+            blockRule(#"^https?://([^/]+\.)?adroll\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?podtrac\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?chartable\.com/.*"#),
+
+            // --- Major Display, Video & Programmatic Ad Networks ---
             blockRule(#"^https?://([^/]+\.)?doubleclick\.net/.*"#),
             blockRule(#"^https?://([^/]+\.)?googlesyndication\.com/.*"#),
             blockRule(#"^https?://([^/]+\.)?googleadservices\.com/.*"#),
@@ -41,13 +74,12 @@ final class AdBlockerService: ObservableObject {
             blockRule(#"^https?://([^/]+\.)?criteo\.com/.*"#),
             blockRule(#"^https?://([^/]+\.)?criteo\.net/.*"#),
             blockRule(#"^https?://([^/]+\.)?adsrvr\.org/.*"#),
-            blockRule(#"^https?://([^/]+\.)?adswizz\.com/.*"#),
-            blockRule(#"^https?://([^/]+\.)?tritondigital\.com/.*"#),
             blockRule(#"^https?://([^/]+\.)?spotxchange\.com/.*"#),
             blockRule(#"^https?://([^/]+\.)?spotx\.tv/.*"#),
             blockRule(#"^https?://([^/]+\.)?moatads\.com/.*"#),
             blockRule(#"^https?://([^/]+\.)?doubleverify\.com/.*"#),
             blockRule(#"^https?://([^/]+\.)?adsafeprotected\.com/.*"#),
+            blockRule(#"^https?://([^/]+\.)?iasds01\.com/.*"#),
             blockRule(#"^https?://([^/]+\.)?scorecardresearch\.com/.*"#),
             blockRule(#"^https?://([^/]+\.)?quantserve\.com/.*"#),
             blockRule(#"^https?://([^/]+\.)?outbrain\.com/.*"#),
@@ -95,6 +127,7 @@ final class AdBlockerService: ObservableObject {
                     ".mobileAppBanner",
                     ".appInstallBanner",
                     ".webBanner",
+                    ".adCountdown",
                     "[data-testid='ad-banner']",
                     "[class*='AdSlot']",
                     "[class*='adContainer']",

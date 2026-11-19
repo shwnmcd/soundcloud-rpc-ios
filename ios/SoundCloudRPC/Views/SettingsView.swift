@@ -22,9 +22,11 @@ struct SettingsView: View {
                         HStack {
                             Image(systemName: "shield.checkered")
                                 .foregroundColor(.orange)
-                            VStack(alignment: .leading) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(settings.t("enableAdBlocker"))
-                                Text(adBlocker.isCompiled ? "\(adBlocker.ruleCount) WebKit rules active" : "Compiling rules...")
+                                Text(adBlocker.isCompiled
+                                     ? "\(adBlocker.ruleCount) WebKit rules + Audio Ad Shield (\(adBlocker.blockedAdsCount) blocked)"
+                                     : "Compiling rules...")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
@@ -34,6 +36,18 @@ struct SettingsView: View {
                         webController.applyContentRuleList(adBlocker: adBlocker, enabled: enabled)
                         applyVisualPreferences()
                         webController.reload()
+                    }
+
+                    Toggle(isOn: $settings.mobileAppLayout) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Native Mobile App Layout")
+                            Text("Hides website chrome and fits SoundCloud cleanly to iPhone/iPad screens")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .onChange(of: settings.mobileAppLayout) { _ in
+                        applyVisualPreferences()
                     }
 
                     Toggle(settings.t("darkMode"), isOn: $settings.darkMode)
@@ -278,7 +292,7 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("App", value: "SoundCloud RPC for iOS & iPadOS")
+                    LabeledContent("App", value: "SoundCloud RPC v1.1 (iOS & iPadOS)")
                     LabeledContent("Based on", value: "richardhbtz/soundcloud-rpc (MIT)")
                 }
             }
@@ -324,6 +338,7 @@ struct SettingsView: View {
         let css = themePluginManager.activeThemeCSS(selectedName: settings.selectedCustomTheme)
         webController.applyThemeAndCosmetics(
             isDark: settings.darkMode,
+            mobileAppLayout: settings.mobileAppLayout,
             customCSS: css,
             adBlockerEnabled: settings.adBlockerEnabled
         )

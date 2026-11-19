@@ -12,6 +12,10 @@ final class AppSettings: ObservableObject {
     @Published var adBlockerEnabled: Bool {
         didSet { defaults.set(adBlockerEnabled, forKey: "adBlockerEnabled") }
     }
+    /// Adapts SoundCloud's full web engine into a native mobile single-column layout (hiding web header/footer)
+    @Published var mobileAppLayout: Bool {
+        didSet { defaults.set(mobileAppLayout, forKey: "mobileAppLayout") }
+    }
     @Published var desktopMode: Bool {
         didSet { defaults.set(desktopMode, forKey: "desktopMode") }
     }
@@ -81,6 +85,7 @@ final class AppSettings: ObservableObject {
     init() {
         self.darkMode = defaults.object(forKey: "darkMode") as? Bool ?? true
         self.adBlockerEnabled = defaults.object(forKey: "adBlockerEnabled") as? Bool ?? true
+        self.mobileAppLayout = defaults.object(forKey: "mobileAppLayout") as? Bool ?? true
         self.desktopMode = defaults.object(forKey: "desktopMode") as? Bool ?? true
         self.showNavigationBar = defaults.object(forKey: "showNavigationBar") as? Bool ?? true
         self.trackParserEnabled = defaults.object(forKey: "trackParserEnabled") as? Bool ?? true
