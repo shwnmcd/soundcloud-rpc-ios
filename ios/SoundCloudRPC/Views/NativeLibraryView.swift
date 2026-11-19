@@ -141,48 +141,53 @@ struct NativeLikesView: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                // Burnt-Orange Heart Header + Back + Search Pill + Shuffle & White Play Circle
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        Button { dismiss() } label: {
-                            Circle()
-                                .fill(Color.black.opacity(0.42))
-                                .frame(width: 34, height: 34)
-                                .overlay(
-                                    Image(systemName: "chevron.left")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
-                        }
+        VStack(spacing: 0) {
+            // Pinned Sticky Back + Search Pill Bar (keeps tracks cleanly below Dynamic Island just like official SC!)
+            HStack(spacing: 10) {
+                Button { dismiss() } label: {
+                    Circle()
+                        .fill(Color.white.opacity(0.1))
+                        .frame(width: 34, height: 34)
+                        .overlay(
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                        )
+                }
 
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.62))
-                            TextField(
-                                "",
-                                text: $searchText,
-                                prompt: Text("Search \(tracks.count > 0 ? "\(tracks.count) " : "")tracks")
-                                    .foregroundColor(.white.opacity(0.55))
-                            )
-                            .font(.system(size: 14.5))
-                            .foregroundColor(.white)
-                            if !searchText.isEmpty {
-                                Button { searchText = "" } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.white.opacity(0.55))
-                                }
-                            }
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.62))
+                    TextField(
+                        "",
+                        text: $searchText,
+                        prompt: Text("Search \(tracks.count > 0 ? "\(tracks.count) " : "")tracks")
+                            .foregroundColor(.white.opacity(0.55))
+                    )
+                    .font(.system(size: 14.5))
+                    .foregroundColor(.white)
+                    if !searchText.isEmpty {
+                        Button { searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.55))
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.black.opacity(0.45))
-                        .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
-                        .clipShape(Capsule())
                     }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8.5)
+                .background(Color.white.opacity(0.08))
+                .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                .clipShape(Capsule())
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+            .padding(.bottom, 10)
+            .background(Color(red: 0.067, green: 0.067, blue: 0.067))
 
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Burnt-Orange Hero Title + Shuffle & White Play Circle
                     HStack(alignment: .center) {
                         Text("Your likes")
                             .font(.system(size: 28, weight: .bold))
@@ -217,52 +222,52 @@ struct NativeLikesView: View {
                                 )
                         }
                     }
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 8)
-                .padding(.bottom, 14)
-                .background(
-                    LinearGradient(
-                        colors: [Color(red: 0.44, green: 0.13, blue: 0.02), Color(red: 0.067, green: 0.067, blue: 0.067)],
-                        startPoint: .topTrailing,
-                        endPoint: .bottom
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 14)
+                    .background(
+                        LinearGradient(
+                            colors: [Color(red: 0.36, green: 0.11, blue: 0.02), Color(red: 0.067, green: 0.067, blue: 0.067)],
+                            startPoint: .topTrailing,
+                            endPoint: .bottom
+                        )
                     )
-                )
 
-                if isLoading && tracks.isEmpty {
-                    HStack {
-                        Spacer()
-                        ProgressView().tint(.orange).padding(.top, 44)
-                        Spacer()
-                    }
-                } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(filteredTracks) { track in
-                            SCTrackRowView(
-                                track: track,
-                                isCurrentlyPlaying: player.currentTrack?.id == track.id,
-                                isLiked: api.likedTrackIds.contains(track.id),
-                                onTapPlay: {
-                                    player.play(track: track, in: filteredTracks)
-                                },
-                                onToggleLike: {
-                                    Task { _ = await api.toggleLike(trackId: track.id) }
-                                },
-                                onOpenArtist: { user in
-                                    selectedArtist = user
-                                }
-                            )
-                            .padding(.horizontal, 14)
-                            .onAppear {
-                                if track.id == tracks.last?.id, nextHref != nil {
-                                    Task { await loadMore() }
+                    if isLoading && tracks.isEmpty {
+                        HStack {
+                            Spacer()
+                            ProgressView().tint(.orange).padding(.top, 44)
+                            Spacer()
+                        }
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(filteredTracks) { track in
+                                SCTrackRowView(
+                                    track: track,
+                                    isCurrentlyPlaying: player.currentTrack?.id == track.id,
+                                    isLiked: api.likedTrackIds.contains(track.id),
+                                    onTapPlay: {
+                                        player.play(track: track, in: filteredTracks)
+                                    },
+                                    onToggleLike: {
+                                        Task { _ = await api.toggleLike(trackId: track.id) }
+                                    },
+                                    onOpenArtist: { user in
+                                        selectedArtist = user
+                                    }
+                                )
+                                .padding(.horizontal, 16)
+                                .onAppear {
+                                    if track.id == tracks.last?.id, nextHref != nil {
+                                        Task { await loadMore() }
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                Spacer(minLength: 140)
+                    Spacer(minLength: 150)
+                }
             }
         }
         .background(Color(red: 0.067, green: 0.067, blue: 0.067).ignoresSafeArea())
@@ -318,84 +323,80 @@ struct NativePlaylistsView: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 10) {
-                        Button { dismiss() } label: {
-                            Circle()
-                                .fill(Color.white.opacity(0.11))
-                                .frame(width: 34, height: 34)
-                                .overlay(
-                                    Image(systemName: "chevron.left")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
-                        }
+        VStack(spacing: 0) {
+            // Pinned Sticky Back + Search Bar (Matches Official SC Playlists / Albums!)
+            HStack(spacing: 10) {
+                Button { dismiss() } label: {
+                    Circle()
+                        .fill(Color.white.opacity(0.1))
+                        .frame(width: 34, height: 34)
+                        .overlay(
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                        )
+                }
 
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.6))
-                            TextField(
-                                "",
-                                text: $searchText,
-                                prompt: Text("Search \(items.count > 0 ? "\(items.count) " : "")\(albumsOnly ? "albums" : "playlists")")
-                                    .foregroundColor(.white.opacity(0.55))
-                            )
-                            .font(.system(size: 14.5))
-                            .foregroundColor(.white)
-                            if !searchText.isEmpty {
-                                Button { searchText = "" } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.white.opacity(0.55))
-                                }
-                            }
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.6))
+                    TextField(
+                        "",
+                        text: $searchText,
+                        prompt: Text("Search \(items.count > 0 ? "\(items.count) " : "")\(albumsOnly ? "albums" : "playlists")")
+                            .foregroundColor(.white.opacity(0.55))
+                    )
+                    .font(.system(size: 14.5))
+                    .foregroundColor(.white)
+                    if !searchText.isEmpty {
+                        Button { searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.55))
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.1))
-                        .clipShape(Capsule())
                     }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8.5)
+                .background(Color.white.opacity(0.08))
+                .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                .clipShape(Capsule())
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+            .padding(.bottom, 10)
+            .background(Color(red: 0.067, green: 0.067, blue: 0.067))
 
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(albumsOnly ? "Albums" : "Playlists")
                         .font(.system(size: 26, weight: .bold))
                         .foregroundColor(.white)
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 8)
-                .padding(.bottom, 10)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            albumsOnly ? Color(white: 0.1) : Color(red: 0.42, green: 0.14, blue: 0.02),
-                            Color(red: 0.067, green: 0.067, blue: 0.067)
-                        ],
-                        startPoint: .topTrailing,
-                        endPoint: .bottom
-                    )
-                )
+                        .padding(.horizontal, 16)
+                        .padding(.top, 6)
+                        .padding(.bottom, 10)
 
-                if isLoading && items.isEmpty {
-                    HStack {
-                        Spacer()
-                        ProgressView().tint(.orange).padding(.top, 44)
-                        Spacer()
-                    }
-                } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(filtered) { pl in
-                            NavigationLink {
-                                NativePlaylistDetailView(playlist: pl)
-                            } label: {
-                                SCPlaylistRowView(playlist: pl)
-                                    .padding(.horizontal, 14)
+                    if isLoading && items.isEmpty {
+                        HStack {
+                            Spacer()
+                            ProgressView().tint(.orange).padding(.top, 44)
+                            Spacer()
+                        }
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(filtered) { pl in
+                                NavigationLink {
+                                    NativePlaylistDetailView(playlist: pl)
+                                } label: {
+                                    SCPlaylistRowView(playlist: pl)
+                                        .padding(.horizontal, 16)
+                                }
                             }
                         }
                     }
-                }
 
-                Spacer(minLength: 140)
+                    Spacer(minLength: 150)
+                }
             }
         }
         .background(Color(red: 0.067, green: 0.067, blue: 0.067).ignoresSafeArea())

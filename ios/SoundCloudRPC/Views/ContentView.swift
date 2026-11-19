@@ -325,10 +325,10 @@ struct ContentView: View {
             }
         }
         .background(
-            Color(red: 0.055, green: 0.055, blue: 0.065).opacity(0.97)
+            Color(red: 0.067, green: 0.067, blue: 0.067)
                 .ignoresSafeArea(edges: .bottom)
         )
-        .overlay(Divider().opacity(0.2), alignment: .top)
+        .overlay(Divider().opacity(0.22), alignment: .top)
     }
 
     private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {

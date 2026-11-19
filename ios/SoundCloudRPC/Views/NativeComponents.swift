@@ -71,36 +71,36 @@ struct SCTrackRowView: View {
     var onOpenArtist: ((SCUser) -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 13) {
             ZStack {
                 HDArtworkView(rawUrl: track.rawArtwork, preferOriginal: false, cornerRadius: 6)
-                    .frame(width: 52, height: 52)
+                    .frame(width: 58, height: 58)
 
                 if isCurrentlyPlaying {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(Color.black.opacity(0.45))
-                        .frame(width: 52, height: 52)
+                        .frame(width: 58, height: 58)
                     Image(systemName: "waveform")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundColor(.orange)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3.5) {
                 Text(track.displayTitle)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 15.5, weight: .semibold))
                     .foregroundColor(isCurrentlyPlaying ? .orange : .white)
                     .lineLimit(1)
 
                 Text(track.artistName)
-                    .font(.system(size: 13.5))
-                    .foregroundColor(Color(white: 0.65))
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(white: 0.64))
                     .lineLimit(1)
 
                 HStack(spacing: 5) {
                     if !track.formattedPlays.isEmpty {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 8.5))
+                            .font(.system(size: 9))
                         Text(track.formattedPlays)
                         Text("·")
                     }
@@ -108,11 +108,11 @@ struct SCTrackRowView: View {
                     if isLiked {
                         Text("·")
                         Image(systemName: "heart.fill")
-                            .font(.system(size: 9))
+                            .font(.system(size: 9.5))
                             .foregroundColor(.orange)
                     }
                 }
-                .font(.system(size: 11.5))
+                .font(.system(size: 12.5))
                 .foregroundColor(Color(white: 0.52))
                 .lineLimit(1)
             }
@@ -147,13 +147,13 @@ struct SCTrackRowView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(Color(white: 0.62))
-                    .frame(width: 32, height: 40)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(Color(white: 0.6))
+                    .frame(width: 34, height: 44)
                     .contentShape(Rectangle())
             }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onTapGesture {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -167,25 +167,25 @@ struct SCPlaylistRowView: View {
     let playlist: SCPlaylist
 
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 13) {
             HDArtworkView(rawUrl: playlist.rawArtwork, preferOriginal: false, cornerRadius: 6)
-                .frame(width: 52, height: 52)
+                .frame(width: 58, height: 58)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3.5) {
                 Text(playlist.displayTitle)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 15.5, weight: .semibold))
                     .foregroundColor(.white)
                     .lineLimit(1)
 
                 Text(playlist.creatorName)
-                    .font(.system(size: 13.5))
-                    .foregroundColor(Color(white: 0.65))
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(white: 0.64))
                     .lineLimit(1)
 
                 HStack(spacing: 5) {
                     if playlist.isPrivate {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 9.5))
+                            .font(.system(size: 10))
                         Text("·")
                     } else {
                         Text(playlist.isAlbum == true ? "Album" : "Playlist")
@@ -197,7 +197,7 @@ struct SCPlaylistRowView: View {
                         Text(playlist.formattedDuration)
                     }
                 }
-                .font(.system(size: 11.5))
+                .font(.system(size: 12.5))
                 .foregroundColor(Color(white: 0.52))
                 .lineLimit(1)
             }
@@ -205,11 +205,11 @@ struct SCPlaylistRowView: View {
             Spacer(minLength: 4)
 
             Image(systemName: "ellipsis")
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundColor(Color(white: 0.55))
-                .frame(width: 28, height: 36)
+                .frame(width: 30, height: 40)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
     }
 }
