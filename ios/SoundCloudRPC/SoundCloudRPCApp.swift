@@ -4,6 +4,9 @@ import AVFoundation
 @main
 struct SoundCloudRPCApp: App {
     @StateObject private var settings = AppSettings()
+    @StateObject private var authBridge = SoundCloudAuthBridge()
+    @StateObject private var api = SoundCloudAPI()
+    @StateObject private var player = AudioPlayerService()
     @StateObject private var adBlocker = AdBlockerService()
     @StateObject private var lastFm = LastFmService()
     @StateObject private var webhooks = WebhookService()
@@ -18,12 +21,15 @@ struct SoundCloudRPCApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(settings)
+                .environmentObject(authBridge)
+                .environmentObject(api)
+                .environmentObject(player)
                 .environmentObject(adBlocker)
                 .environmentObject(lastFm)
                 .environmentObject(webhooks)
                 .environmentObject(nowPlaying)
                 .environmentObject(themePluginManager)
-                .preferredColorScheme(settings.darkMode ? .dark : .light)
+                .preferredColorScheme(.dark)
         }
     }
 
