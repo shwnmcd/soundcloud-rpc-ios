@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.soundcloudrpc.android.AppViewModel
 import com.soundcloudrpc.android.data.JamSessionManager
 import com.soundcloudrpc.android.model.SCTrack
+import com.soundcloudrpc.android.model.SearchFilter
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -310,8 +311,8 @@ fun JamBottomSheet(
                             searchQuery = q
                             if (q.length >= 2) {
                                 scope.launch {
-                                    val res = vm.api.search(q, "tracks")
-                                    searchResults = res.first.take(5)
+                                    val res = vm.api.search(q, SearchFilter.TRACKS)
+                                    searchResults = res.tracks.take(5)
                                 }
                             } else {
                                 searchResults = emptyList()
