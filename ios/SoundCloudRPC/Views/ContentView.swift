@@ -12,23 +12,14 @@ enum AppTab: String, CaseIterable {
         case .home: return "Home"
         case .feed: return "Feed"
         case .search: return "Search"
-        case .library: return "Your Library"
-        }
-    }
-
-    var shortTitle: String {
-        switch self {
-        case .home: return "Home"
-        case .feed: return "Feed"
-        case .search: return "Search"
-        case .library: return "Your Library"
+        case .library: return "Library"
         }
     }
 
     var icon: String {
         switch self {
         case .home: return "house"
-        case .feed: return "flame"
+        case .feed: return "rectangle.stack"
         case .search: return "magnifyingglass"
         case .library: return "books.vertical"
         }
@@ -37,7 +28,7 @@ enum AppTab: String, CaseIterable {
     var activeIcon: String {
         switch self {
         case .home: return "house.fill"
-        case .feed: return "flame.fill"
+        case .feed: return "rectangle.stack.fill"
         case .search: return "magnifyingglass"
         case .library: return "books.vertical.fill"
         }
@@ -55,20 +46,26 @@ struct ContentView: View {
 
     @StateObject private var webController = WebViewController()
     @State private var selectedTab: AppTab = .home
-    @State private var selectedLibrarySection: LibrarySection = .overview
+    /// Nil = showing native SoundCloud Library Hub menu; non-nil = viewing that Library section (Likes, Albums, Playlists, etc.)
+    @State private var activeLibrarySection: LibrarySection? = nil
     @State private var selectedSearchFilter: SearchFilter = .all
     @State private var showingSettings = false
     @State private var showingNowPlaying = false
     @State private var searchText = ""
+    @State private var libraryFilterText = ""
     @State private var rulesReady = false
     @FocusState private var searchFocused: Bool
 
     private var appBg: Color {
-        settings.darkMode ? Color(red: 0.071, green: 0.071, blue: 0.071) : Color(UIColor.systemBackground)
+        settings.darkMode ? Color(red: 0.067, green: 0.067, blue: 0.067) : Color(UIColor.systemBackground)
     }
 
     private var isIPadLayout: Bool {
         horizontalSizeClass == .regular
+    }
+
+    private var showingNativeLibraryHub: Bool {
+        selectedTab == .library && activeLibrarySection == nil && !isIPadLayout
     }
 
     var body: some View {
@@ -91,46 +88,162 @@ struct ContentView: View {
             )
         }
         .task {
+            webController.onNativeNav = { destination in
+                handleHomeQuickNav(destination)
+            }
             await adBlocker.compileIfNeeded()
             rulesReady = true
         }
     }
 
-    // MARK: - iPhone Layout (Spotify-Inspired Seamless Header + Floating Mini-Player + 4-Tab Bar)
+    private func handleHomeQuickNav(_ dest: String) {
+        haptic(.light)
+        switch dest {
+        case "likes":
+            openLibrarySection(.likes)
+        case "likes_shuffle":
+            openLibrarySection(.likes)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                webController.shuffleAndPlay()
+            }
+        case "playlists":
+            openLibrarySection(.playlists)
+        case "albums":
+            openLibrarySection(.albums)
+        case "stations":
+            openLibrarySection(.stations)
+        case "history":
+            openLibrarySection(.history)
+        default:
+            break
+        }
+    }
+
+    private func openLibrarySection(_ section: LibrarySection) {
+        selectedTab = .library
+        activeLibrarySection = section
+        libraryFilterText = ""
+        webController.loadLibrary(section: section)
+    }
+
+    // MARK: - iPhone Layout (Official SoundCloud iOS Inspired, Zero Ads / Zero Upgrade)
     private var iPhoneLayout: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
                 if settings.showNavigationBar {
-                    spotifyStyleHeader
+                    soundCloudTopHeader
                 }
 
-                if webController.isLoading && webController.estimatedProgress < 1.0 {
+                if webController.isLoading && webController.estimatedProgress < 1.0 && !showingNativeLibraryHub {
                     ProgressView(value: webController.estimatedProgress)
                         .tint(.orange)
                         .scaleEffect(x: 1, y: 0.4, anchor: .center)
                 }
 
-                mainWebViewport
+                // Keep WebView mounted underneath Native Library Hub so playback NEVER interrupts!
+                ZStack {
+                    mainWebViewport
+                        .opacity(showingNativeLibraryHub ? 0 : 1)
+                        .allowsHitTesting(!showingNativeLibraryHub)
+
+                    if showingNativeLibraryHub {
+                        nativeLibraryHubView
+                            .transition(.opacity)
+                    }
+                }
             }
 
-            // Bottom Floating Mini-Player + Sleek Tab Bar (stays out of keyboard's way!)
+            // Floating Mini-Player + Official SoundCloud 4-Tab Bar (Home · Feed · Search · Library)
             VStack(spacing: 0) {
                 if !webController.currentTrack.isEmpty {
-                    spotifyMiniPlayer
+                    floatingMiniPlayer
                         .padding(.horizontal, 8)
                         .padding(.bottom, 6)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                spotifyBottomTabBar
+                soundCloudBottomTabBar
             }
             .ignoresSafeArea(.keyboard, edges: .bottom)
         }
     }
 
+    // MARK: - Native SoundCloud iOS Library Menu Screen (Matches Official SoundCloud iOS App!)
+    private var nativeLibraryHubView: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(LibrarySection.allCases) { section in
+                    Button {
+                        haptic(.light)
+                        openLibrarySection(section)
+                    } label: {
+                        HStack(spacing: 14) {
+                            Text(section.rawValue)
+                                .font(.body.weight(.medium))
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.secondary.opacity(0.7))
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 16)
+                        .contentShape(Rectangle())
+                    }
+                    Divider()
+                        .background(Color.primary.opacity(0.06))
+                        .padding(.leading, 18)
+                }
+
+                // Clean Ad-Free & Services Summary Card (replaces SoundCloud's empty promo/upgrade box!)
+                Button {
+                    haptic(.light)
+                    showingSettings = true
+                } label: {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.orange.opacity(0.18))
+                                .frame(width: 42, height: 42)
+                            Image(systemName: "shield.checkered")
+                                .font(.system(size: 19, weight: .semibold))
+                                .foregroundColor(.orange)
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(settings.adBlockerEnabled ? "Ad-Free Listening Active" : "AdBlocker Paused")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.primary)
+                            Text("\(adBlocker.blockedAdsCount) ads & trackers blocked • Last.fm, Webhooks & Themes")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(14)
+                    .background(Color.primary.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 22)
+
+                Spacer(minLength: 140)
+            }
+        }
+        .background(appBg)
+    }
+
     // MARK: - iPad Adaptive Sidebar Layout
     private var iPadLayout: some View {
         HStack(spacing: 0) {
-            // Left Native iPad Navigation Sidebar
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
                     ZStack {
@@ -146,9 +259,9 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 18)
-                .padding(.bottom, 14)
+                .padding(.bottom, 12)
 
-                ForEach(AppTab.allCases, id: \.self) { tab in
+                ForEach([AppTab.home, .feed, .search], id: \.self) { tab in
                     iPadSidebarButton(
                         title: tab.title,
                         icon: selectedTab == tab ? tab.activeIcon : tab.icon,
@@ -166,27 +279,24 @@ struct ContentView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 2)
 
-                ForEach([LibrarySection.likes, .playlists, .albums, .history], id: \.self) { section in
+                ForEach(LibrarySection.allCases) { section in
                     iPadSidebarButton(
                         title: section.rawValue,
-                        icon: iconForLibrarySection(section),
-                        isSelected: selectedTab == .library && selectedLibrarySection == section
+                        icon: section.icon,
+                        isSelected: selectedTab == .library && activeLibrarySection == section
                     ) {
-                        selectedTab = .library
-                        selectedLibrarySection = section
-                        webController.loadLibrary(section: section)
+                        openLibrarySection(section)
                     }
                 }
 
                 Spacer()
 
-                // AdBlocker Shield & Settings Footer
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: settings.adBlockerEnabled ? "shield.checkered" : "shield.slash")
                             .foregroundColor(.orange)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(settings.adBlockerEnabled ? "AdBlocker Active" : "AdBlocker Off")
+                            Text(settings.adBlockerEnabled ? "Ad-Free Active" : "AdBlocker Off")
                                 .font(.caption.weight(.semibold))
                             Text("\(adBlocker.blockedAdsCount) ads blocked")
                                 .font(.caption2)
@@ -205,15 +315,14 @@ struct ContentView: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 16)
             }
-            .frame(width: 230)
+            .frame(width: 235)
             .background(settings.darkMode ? Color(red: 0.055, green: 0.055, blue: 0.06) : Color(UIColor.secondarySystemBackground))
             .overlay(Divider(), alignment: .trailing)
 
-            // Right Content Pane
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     if settings.showNavigationBar {
-                        spotifyStyleHeader
+                        soundCloudTopHeader
                     }
                     if webController.isLoading && webController.estimatedProgress < 1.0 {
                         ProgressView(value: webController.estimatedProgress)
@@ -224,7 +333,7 @@ struct ContentView: View {
                 }
 
                 if !webController.currentTrack.isEmpty {
-                    spotifyMiniPlayer
+                    floatingMiniPlayer
                         .frame(maxWidth: 540)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 14)
@@ -241,7 +350,7 @@ struct ContentView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 15, weight: isSelected ? .semibold : .regular))
                     .frame(width: 22)
                 Text(title)
                     .font(.subheadline.weight(isSelected ? .semibold : .medium))
@@ -249,22 +358,10 @@ struct ContentView: View {
             }
             .foregroundColor(isSelected ? .orange : .primary.opacity(0.85))
             .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+            .padding(.vertical, 8)
             .background(isSelected ? Color.orange.opacity(0.14) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .padding(.horizontal, 8)
-        }
-    }
-
-    private func iconForLibrarySection(_ section: LibrarySection) -> String {
-        switch section {
-        case .overview: return "square.grid.2x2"
-        case .likes: return "heart.fill"
-        case .playlists: return "music.note.list"
-        case .albums: return "square.stack.fill"
-        case .stations: return "dot.radiowaves.left.and.right"
-        case .following: return "person.2.fill"
-        case .history: return "clock.fill"
         }
     }
 
@@ -295,12 +392,20 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Sleek Spotify-Style Seamless App Header (No Browser Chrome!)
-    private var spotifyStyleHeader: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                if webController.isDetailPage {
-                    // Integrated circular Back button ONLY on sub-pages (playlists, tracks, artists)
+    // MARK: - Official SoundCloud iOS-Inspired Context-Aware Header
+    private var soundCloudTopHeader: some View {
+        Group {
+            if selectedTab == .library, let section = activeLibrarySection, !webController.isDetailPage {
+                if section == .likes {
+                    // Official SoundCloud iOS "Your likes" Hero Header (Burnt-Orange Glow + Search + Shuffle & White Play!)
+                    yourLikesHeader
+                } else {
+                    // Official SoundCloud iOS "Albums / Playlists / etc." Header (Circular < Back · Centered Title · Search Pill!)
+                    librarySectionHeader(section)
+                }
+            } else if webController.isDetailPage {
+                // Sleek integrated circular < Back button on tracks/playlists/artists
+                HStack(spacing: 12) {
                     Button {
                         haptic(.light)
                         webController.goBack()
@@ -309,7 +414,7 @@ struct ContentView: View {
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.primary)
                             .frame(width: 34, height: 34)
-                            .background(Color.primary.opacity(0.1))
+                            .background(Color.primary.opacity(0.11))
                             .clipShape(Circle())
                     }
 
@@ -323,13 +428,177 @@ struct ContentView: View {
                         haptic(.light)
                         showingSettings = true
                     } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 17, weight: .medium))
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 18, weight: .medium))
                             .foregroundColor(.primary.opacity(0.85))
                             .frame(width: 34, height: 34)
                     }
-                } else {
-                    // Spotify-style Root Tab Header: Profile/Settings Circle + Bold Large Title
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(appBg)
+            } else {
+                rootTabHeader
+            }
+        }
+    }
+
+    /// Official SoundCloud iOS "Your likes" header with warm orange radial glow, search bar, Shuffle & Play circle
+    private var yourLikesHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                if !isIPadLayout {
+                    Button {
+                        haptic(.light)
+                        activeLibrarySection = nil
+                        libraryFilterText = ""
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Color.black.opacity(0.45))
+                            .clipShape(Circle())
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.65))
+                    TextField(
+                        "",
+                        text: $libraryFilterText,
+                        prompt: Text("Search your likes").foregroundColor(.white.opacity(0.55))
+                    )
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                    .onChange(of: libraryFilterText) { query in
+                        webController.filterVisibleList(query: query)
+                    }
+                    if !libraryFilterText.isEmpty {
+                        Button {
+                            libraryFilterText = ""
+                            webController.filterVisibleList(query: "")
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.55))
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.42))
+                .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                .clipShape(Capsule())
+            }
+
+            HStack(alignment: .center) {
+                Text("Your likes")
+                    .font(.title.weight(.bold))
+                    .foregroundColor(.white)
+
+                Spacer()
+
+                Button {
+                    haptic(.light)
+                    webController.shuffleAndPlay()
+                } label: {
+                    Image(systemName: "shuffle")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.9))
+                        .frame(width: 40, height: 40)
+                }
+
+                Button {
+                    haptic(.medium)
+                    webController.playFirstTrack()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(.black)
+                            .offset(x: 1.5)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 14)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.42, green: 0.12, blue: 0.0), appBg],
+                startPoint: .topTrailing,
+                endPoint: .bottom
+            )
+        )
+    }
+
+    /// Official SoundCloud iOS Library Sub-Page Header (Albums, Playlists, etc. — Circular < Back · Centered Title · Search Pill)
+    private func librarySectionHeader(_ section: LibrarySection) -> some View {
+        VStack(spacing: 12) {
+            ZStack {
+                HStack {
+                    if !isIPadLayout {
+                        Button {
+                            haptic(.light)
+                            activeLibrarySection = nil
+                            libraryFilterText = ""
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.primary)
+                                .frame(width: 34, height: 34)
+                                .background(Color.primary.opacity(0.11))
+                                .clipShape(Circle())
+                        }
+                    }
+                    Spacer()
+                }
+
+                Text(section.rawValue)
+                    .font(.headline.weight(.bold))
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.secondary)
+                TextField(section.searchPlaceholder, text: $libraryFilterText)
+                    .font(.subheadline)
+                    .onChange(of: libraryFilterText) { query in
+                        webController.filterVisibleList(query: query)
+                    }
+                if !libraryFilterText.isEmpty {
+                    Button {
+                        libraryFilterText = ""
+                        webController.filterVisibleList(query: "")
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color.primary.opacity(0.1))
+            .clipShape(Capsule())
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+        .background(appBg)
+    }
+
+    /// Root Tab Headers (Home · Feed · Search · Library Hub)
+    private var rootTabHeader: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                HStack(spacing: 10) {
                     if !isIPadLayout {
                         Button {
                             haptic(.light)
@@ -337,7 +606,7 @@ struct ContentView: View {
                         } label: {
                             ZStack {
                                 Circle()
-                                    .fill(LinearGradient(colors: [.orange, Color(red: 1.0, green: 0.28, blue: 0.0)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .fill(LinearGradient(colors: [.orange, Color(red: 1.0, green: 0.25, blue: 0.0)], startPoint: .topLeading, endPoint: .bottomTrailing))
                                     .frame(width: 32, height: 32)
                                 Image(systemName: "waveform")
                                     .font(.system(size: 14, weight: .bold))
@@ -346,22 +615,31 @@ struct ContentView: View {
                         }
                     }
 
-                    Text(selectedTab.title)
-                        .font(.title2.weight(.bold))
-
-                    Spacer()
-
-                    if selectedTab != .search && !isIPadLayout {
+                    if selectedTab == .home {
                         Button {
                             haptic(.light)
-                            selectTab(.search)
+                            showingSettings = true
                         } label: {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 19, weight: .medium))
-                                .foregroundColor(.primary)
-                                .frame(width: 34, height: 34)
+                            HStack(spacing: 5) {
+                                Image(systemName: "shield.checkered")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(.orange)
+                                Text(adBlocker.blockedAdsCount > 0 ? "Ad-Free • \(adBlocker.blockedAdsCount)" : "Ad-Free")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundColor(.primary)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 6)
+                            .background(Color.primary.opacity(0.08))
+                            .overlay(Capsule().stroke(Color.primary.opacity(0.14), lineWidth: 1))
+                            .clipShape(Capsule())
                         }
+                    } else if selectedTab != .library {
+                        Text(selectedTab.title)
+                            .font(.title2.weight(.bold))
                     }
+
+                    Spacer()
 
                     if !isIPadLayout {
                         Button {
@@ -375,12 +653,18 @@ struct ContentView: View {
                         }
                     }
                 }
+
+                // Centered "Library" title on the native Library Hub screen (matches Screenshot 3!)
+                if selectedTab == .library {
+                    Text("Library")
+                        .font(.headline.weight(.bold))
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 6)
 
-            // Spotify-Style White Pill Search Bar + Filter Chips on Search Tab
-            if selectedTab == .search && !webController.isDetailPage {
+            // Sleek Search Bar + Filter Chips on Search Tab
+            if selectedTab == .search {
                 VStack(spacing: 10) {
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass")
@@ -390,7 +674,7 @@ struct ContentView: View {
                         TextField(
                             "",
                             text: $searchText,
-                            prompt: Text("What do you want to listen to?")
+                            prompt: Text("Search tracks, artists, albums...")
                                 .foregroundColor(settings.darkMode ? Color.black.opacity(0.55) : Color.secondary)
                         )
                         .font(.subheadline.weight(.medium))
@@ -412,7 +696,7 @@ struct ContentView: View {
                         }
                     }
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, 10)
                     .background(settings.darkMode ? Color.white : Color(UIColor.secondarySystemFill))
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .padding(.horizontal, 16)
@@ -431,24 +715,6 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 16)
                     }
-                }
-            }
-
-            // Spotify-Style Horizontal Filter Chips on Library Tab (replaces SoundCloud's multi-row web tabs!)
-            if selectedTab == .library && !webController.isDetailPage {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(LibrarySection.allCases) { section in
-                            filterChip(
-                                title: section.rawValue,
-                                isSelected: selectedLibrarySection == section
-                            ) {
-                                selectedLibrarySection = section
-                                webController.loadLibrary(section: section)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
                 }
             }
         }
@@ -471,8 +737,8 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Spotify-Inspired Sleek Floating Mini-Player
-    private var spotifyMiniPlayer: some View {
+    // MARK: - Sleek Floating Mini-Player
+    private var floatingMiniPlayer: some View {
         let track = webController.currentTrack
         let parsed = TrackParser.normalizeTrackInfo(
             titleFromPage: track.title,
@@ -528,7 +794,6 @@ struct ContentView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
 
-            // Sleek Bottom Progress Hairline (Spotify style)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Rectangle().fill(Color.white.opacity(0.14))
@@ -539,7 +804,7 @@ struct ContentView: View {
             .frame(height: 2.5)
             .padding(.horizontal, 10)
         }
-        .background(Color(red: 0.16, green: 0.16, blue: 0.18).opacity(0.96))
+        .background(Color(red: 0.15, green: 0.15, blue: 0.17).opacity(0.97))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: Color.black.opacity(0.45), radius: 14, x: 0, y: 6)
         .onTapGesture {
@@ -548,8 +813,8 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Spotify-Inspired Clean 4-Tab Bottom Bar (iPhone)
-    private var spotifyBottomTabBar: some View {
+    // MARK: - Official SoundCloud 4-Tab Bottom Bar (Home · Feed · Search · Library — No Upgrade!)
+    private var soundCloudBottomTabBar: some View {
         HStack(spacing: 0) {
             ForEach(AppTab.allCases, id: \.self) { tab in
                 let isSelected = selectedTab == tab
@@ -559,8 +824,8 @@ struct ContentView: View {
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: isSelected ? tab.activeIcon : tab.icon)
-                            .font(.system(size: 21, weight: isSelected ? .semibold : .regular))
-                        Text(tab.shortTitle)
+                            .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
+                        Text(tab.title)
                             .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
                     }
                     .foregroundColor(
@@ -576,20 +841,14 @@ struct ContentView: View {
         .background(
             Group {
                 if settings.darkMode {
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.07, green: 0.07, blue: 0.08).opacity(0.92),
-                            Color(red: 0.05, green: 0.05, blue: 0.06).opacity(0.99)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                    Color(red: 0.06, green: 0.06, blue: 0.07).opacity(0.97)
                 } else {
                     Color(UIColor.systemBackground).opacity(0.96)
                 }
             }
             .ignoresSafeArea(edges: .bottom)
         )
+        .overlay(Divider().opacity(0.25), alignment: .top)
     }
 
     private func selectTab(_ tab: AppTab) {
@@ -597,11 +856,14 @@ struct ContentView: View {
         switch tab {
         case .home:
             searchFocused = false
+            activeLibrarySection = nil
             webController.loadHome()
         case .feed:
             searchFocused = false
+            activeLibrarySection = nil
             webController.loadFeed()
         case .search:
+            activeLibrarySection = nil
             if !searchText.isEmpty {
                 webController.loadSearch(query: searchText, filter: selectedSearchFilter)
             } else {
@@ -610,7 +872,13 @@ struct ContentView: View {
             }
         case .library:
             searchFocused = false
-            webController.loadLibrary(section: selectedLibrarySection)
+            if isIPadLayout {
+                openLibrarySection(activeLibrarySection ?? .likes)
+            } else {
+                // Show native SoundCloud iOS Library menu!
+                activeLibrarySection = nil
+                libraryFilterText = ""
+            }
         }
     }
 

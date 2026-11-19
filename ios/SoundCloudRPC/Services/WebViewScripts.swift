@@ -1,7 +1,20 @@
 import Foundation
 
 enum WebViewScripts {
-    /// Port of soundcloud-rpc's audioMonitorService.js adapted for WKWebView + Like/Shuffle/Repeat state
+    /// Captures SoundCloud's detached `new Audio()` HTMLMediaElement at document-start so seeking works reliably both in-app and on Lock Screen
+    static let audioCaptureScript: String = """
+    (function() {
+      if (window.__scAudioCaptureActive) return;
+      window.__scAudioCaptureActive = true;
+      const origPlay = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function() {
+        window.__scActiveAudio = this;
+        return origPlay.apply(this, arguments);
+      };
+    })();
+    """
+
+    /// Port of soundcloud-rpc's audioMonitorService.js adapted for WKWebView + Lock Screen MediaSession sync
     static let audioMonitorScript: String = """
     (function() {
       if (window.__soundCloudMonitorActive) return;
@@ -151,26 +164,37 @@ enum WebViewScripts {
           });
           navigator.mediaSession.setActionHandler('seekto', (details) => {
             if (!details || typeof details.seekTime !== 'number') return;
-            const audio = document.querySelector('audio');
-            if (audio && isFinite(audio.duration) && audio.duration > 0) {
-              audio.currentTime = Math.max(0, Math.min(audio.duration, details.seekTime));
-              return;
-            }
             const durationEl = document.querySelector('.playbackTimeline__duration span:last-child');
             const bar = document.querySelector('.playbackTimeline__progressWrapper');
-            if (bar && durationEl) {
+            const audio = window.__scActiveAudio || document.querySelector('audio');
+            let totalSec = (audio && isFinite(audio.duration) && audio.duration > 0) ? audio.duration : 0;
+            if (!totalSec && durationEl) {
               const parts = durationEl.textContent.trim().replace(/^-/, '').split(':').map(Number);
-              let totalSec = 0;
               for (const p of parts) totalSec = totalSec * 60 + (isNaN(p) ? 0 : p);
-              if (totalSec > 0) {
-                const frac = Math.max(0, Math.min(1, details.seekTime / totalSec));
-                const rect = bar.getBoundingClientRect();
+            }
+            if (bar && totalSec > 0) {
+              const frac = Math.max(0, Math.min(1, details.seekTime / totalSec));
+              const rect = bar.getBoundingClientRect();
+              if (rect.width > 10) {
                 const x = rect.left + rect.width * frac;
                 const y = rect.top + rect.height / 2;
-                ['mousedown', 'mouseup', 'click'].forEach((type) => {
-                  bar.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
-                });
+                const common = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, button: 0, buttons: 1 };
+                try { bar.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerId: 1, pointerType: 'mouse', isPrimary: true }, common))); } catch (e) {}
+                bar.dispatchEvent(new MouseEvent('mousedown', common));
+                document.dispatchEvent(new MouseEvent('mousemove', common));
+                bar.dispatchEvent(new MouseEvent('mousemove', common));
+                document.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, common, { buttons: 0 })));
+                bar.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, common, { buttons: 0 })));
+                bar.dispatchEvent(new MouseEvent('click', Object.assign({}, common, { buttons: 0 })));
               }
+            }
+            if (audio && isFinite(audio.duration) && audio.duration > 0) {
+              const target = Math.max(0, Math.min(audio.duration, details.seekTime));
+              setTimeout(() => {
+                if (Math.abs(audio.currentTime - target) > 2.0) {
+                  try { audio.currentTime = target; } catch (e) {}
+                }
+              }, 80);
             }
           });
         } catch (e) {}
@@ -219,7 +243,6 @@ enum WebViewScripts {
         return { body: '{"collection":[],"ads":[],"audio_ads":[],"visual_ads":[]}', type: 'application/json' };
       }
 
-      // Layer 2A: Intercept window.fetch
       const origFetch = window.fetch;
       if (origFetch) {
         window.fetch = function(input, init) {
@@ -236,7 +259,6 @@ enum WebViewScripts {
         };
       }
 
-      // Layer 2B: Intercept XMLHttpRequest
       const origOpen = XMLHttpRequest.prototype.open;
       const origSend = XMLHttpRequest.prototype.send;
 
@@ -272,7 +294,6 @@ enum WebViewScripts {
         return origSend.apply(this, arguments);
       };
 
-      // Layer 3: Active Audio-Ad Failsafe Monitor
       let savedVolume = 1.0;
       let mutingAd = false;
 
@@ -331,7 +352,7 @@ enum WebViewScripts {
     })();
     """
 
-    /// Generates JS to apply Dark Mode, Sleek Spotify-inspired Mobile/iPad App CSS, AdBlocker cosmetics, and Custom CSS
+    /// Generates JS to apply Dark Mode, Official SoundCloud iOS-Inspired Layout (Compact 56px Library Rows, 164px Home Carousels, Scrollable Home Quick-Cards), AdBlocker Cosmetics & Custom Theme
     static func themeAndCosmeticScript(
         isDark: Bool,
         mobileAppLayout: Bool,
@@ -354,24 +375,27 @@ enum WebViewScripts {
         """ : ""
 
         let mobileLayoutCSS = mobileAppLayout ? """
-        /* === Sleek Spotify-Inspired iPhone & iPad Native App Styling === */
+        /* === Official SoundCloud iOS-Inspired Sleek App Layout === */
         html, body {
             max-width: 100vw !important;
             overflow-x: hidden !important;
             -webkit-overflow-scrolling: touch !important;
             padding-top: 0 !important;
-            padding-bottom: 140px !important;
-            background-color: var(--background-base, #121212) !important;
+            padding-bottom: 150px !important;
+            background-color: var(--background-base, #111111) !important;
             font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif !important;
         }
 
-        /* Hide SoundCloud's desktop website chrome (replaced by native SwiftUI header, chips & tab bar) */
+        /* Hide SoundCloud's desktop website chrome */
         header.header,
         .header,
         .announcements,
         .collection__nav,
         .collectionNav,
         .g-tabs-large,
+        .collectionSection__top,
+        .collectionSection__filters,
+        .userLikes__header,
         .searchTitle,
         .searchOptions,
         .search .l-sidebar-left,
@@ -381,18 +405,19 @@ enum WebViewScripts {
             display: none !important;
         }
 
-        /* Keep playControls mounted off-screen so Play/Pause/Next/Like/Seek stay 100% functional */
+        /* Keep playControls invisible at left:0 (NOT -9999px!) so timeline getBoundingClientRect() has valid positive coordinates for seeking */
         .playControls {
             position: fixed !important;
-            left: -9999px !important;
+            left: 0 !important;
+            right: 0 !important;
             bottom: 0 !important;
             width: 100vw !important;
             opacity: 0 !important;
             pointer-events: none !important;
-            z-index: -1 !important;
+            z-index: -10 !important;
         }
 
-        /* Collapse fixed 1240px desktop containers to clean full-width app canvas */
+        /* Full-width clean canvas */
         #app,
         .l-container,
         .l-container.l-content,
@@ -422,7 +447,7 @@ enum WebViewScripts {
         }
 
         .l-container.l-content {
-            padding: 8px 14px 150px 14px !important;
+            padding: 6px 14px 155px 14px !important;
         }
 
         .l-fluid-fixed .l-main,
@@ -436,7 +461,6 @@ enum WebViewScripts {
             border: none !important;
         }
 
-        /* Hide cluttered sidebar promos on Home/Search; stack gracefully on track detail pages */
         .l-front .l-sidebar-right,
         .stream .l-sidebar-right {
             display: none !important;
@@ -445,15 +469,115 @@ enum WebViewScripts {
             position: static !important;
             float: none !important;
             width: 100% !important;
-            margin: 22px 0 0 0 !important;
-            padding: 16px 0 0 0 !important;
+            margin: 20px 0 0 0 !important;
+            padding: 14px 0 0 0 !important;
             border-top: 1px solid rgba(255,255,255,0.08) !important;
         }
 
-        /* === BIG, SLEEK SPOTIFY-STYLE HORIZONTAL CAROUSEL CARDS ON HOME === */
+        /* === INJECTED SOUNDCLOUD iOS HOME QUICK-CARDS (Scrolls naturally with Home!) === */
+        #sc-ios-home-quick {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin: 4px 0 24px 0;
+        }
+        #sc-ios-home-quick .sc-likes-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 16px;
+            border-radius: 14px;
+            background: linear-gradient(125deg, #5a1c00 0%, #2a1106 52%, #19191b 100%);
+            border: 1px solid rgba(255, 85, 0, 0.25);
+            color: #ffffff;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        #sc-ios-home-quick .sc-likes-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        #sc-ios-home-quick .sc-likes-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: rgba(255, 85, 0, 0.22);
+            border: 1.5px solid #ff5500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: #ff5500;
+        }
+        #sc-ios-home-quick .sc-likes-title {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: -0.2px;
+        }
+        #sc-ios-home-quick .sc-likes-sub {
+            font-size: 12px;
+            color: rgba(255,255,255,0.68);
+            margin-top: 2px;
+        }
+        #sc-ios-home-quick .sc-shuffle-pill {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.12);
+            border: none;
+            color: #ffffff;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #sc-ios-home-quick .sc-quick-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        #sc-ios-home-quick .sc-quick-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 11px 12px;
+            border-radius: 12px;
+            background: #1b1b1e;
+            border: 1px solid rgba(255,255,255,0.06);
+            color: #ffffff;
+            cursor: pointer;
+        }
+        html.theme-light #sc-ios-home-quick .sc-quick-card {
+            background: #f2f2f7;
+            color: #111111;
+            border-color: rgba(0,0,0,0.08);
+        }
+        #sc-ios-home-quick .sc-quick-badge {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+        #sc-ios-home-quick .sc-quick-name {
+            font-size: 13.5px;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        #sc-ios-home-quick .sc-quick-meta {
+            font-size: 11px;
+            opacity: 0.62;
+            margin-top: 2px;
+        }
+
+        /* === OFFICIAL SOUNDCLOUD iOS HOME HORIZONTAL SQUARE CAROUSELS === */
         .mixedSelectionModule,
         .collectionSection {
-            margin-bottom: 24px !important;
+            margin-bottom: 26px !important;
             border: none !important;
             padding: 0 !important;
         }
@@ -464,13 +588,18 @@ enum WebViewScripts {
             letter-spacing: -0.3px !important;
             margin-bottom: 12px !important;
         }
+        .tileGallery__slider,
+        .tileGallery__sliderPeek,
         .tileGallery__sliderPanel {
             overflow-x: auto !important;
             overflow-y: hidden !important;
             -webkit-overflow-scrolling: touch !important;
+            touch-action: pan-x pan-y !important;
             scrollbar-width: none !important;
             padding-bottom: 4px !important;
         }
+        .tileGallery__slider::-webkit-scrollbar,
+        .tileGallery__sliderPeek::-webkit-scrollbar,
         .tileGallery__sliderPanel::-webkit-scrollbar {
             display: none !important;
         }
@@ -482,36 +611,43 @@ enum WebViewScripts {
             transform: none !important;
         }
         .tileGallery__slide {
-            flex: 0 0 154px !important;
-            width: 154px !important;
-            min-width: 154px !important;
-            max-width: 154px !important;
+            flex: 0 0 162px !important;
+            width: 162px !important;
+            min-width: 162px !important;
+            max-width: 162px !important;
             padding: 0 !important;
             margin: 0 !important;
         }
         .tileGallery__slide .playableTile,
-        .tileGallery__slide .playableTile__artwork,
         .tileGallery__slide .playableTile__artworkLink,
         .tileGallery__slide .image {
-            width: 154px !important;
+            width: 162px !important;
             height: auto !important;
         }
         .tileGallery__slide .playableTile__artwork {
-            width: 154px !important;
-            height: 154px !important;
+            position: relative !important;
+            width: 162px !important;
+            height: 162px !important;
+            padding: 0 !important;
             border-radius: 10px !important;
             overflow: hidden !important;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.35) !important;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.38) !important;
         }
-        .playableTile__artwork .image__full {
+        .tileGallery__slide .playableTile__artwork .image,
+        .tileGallery__slide .playableTile__artwork .image__full {
+            position: absolute !important;
+            inset: 0 !important;
             width: 100% !important;
             height: 100% !important;
+            padding: 0 !important;
+            background-size: cover !important;
+            background-position: center !important;
             border-radius: 10px !important;
         }
-        .playableTile__description {
+        .tileGallery__slide .playableTile__description {
             margin-top: 8px !important;
         }
-        .playableTile__heading {
+        .tileGallery__slide .playableTile__heading {
             font-size: 13.5px !important;
             font-weight: 600 !important;
             line-height: 1.3 !important;
@@ -519,78 +655,28 @@ enum WebViewScripts {
             overflow: hidden !important;
             text-overflow: ellipsis !important;
         }
-        .playableTile__usernameHeading {
+        .tileGallery__slide .playableTile__usernameHeading {
             font-size: 12px !important;
-            opacity: 0.68 !important;
+            opacity: 0.65 !important;
             margin-top: 2px !important;
+            display: -webkit-box !important;
+            -webkit-line-clamp: 2 !important;
+            -webkit-box-orient: vertical !important;
+            overflow: hidden !important;
         }
 
-        /* === CLEAN 2-COLUMN (iPhone) / 4-COLUMN (iPad) LIBRARY GRID (NO GIANT GAPS!) === */
-        .collectionSection__top,
-        .collectionSection__filters,
-        .userLikes__header {
-            display: flex !important;
-            flex-wrap: wrap !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-            gap: 8px !important;
-            margin-bottom: 14px !important;
-        }
-        .collectionSection__top .sc-input,
-        .collectionSection__filterInput,
-        .collectionSection__viewToggle,
-        .collectionSection__top input {
-            display: none !important;
-        }
-
+        /* === OFFICIAL SOUNDCLOUD iOS COMPACT 56×56 HORIZONTAL LIST ROWS FOR LIKES, ALBUMS, PLAYLISTS, HISTORY === */
         .badgeList,
         .userLikes .lazyLoadingList__list,
         .collectionSection .lazyLoadingList__list,
         .userNetwork .lazyLoadingList__list {
-            display: grid !important;
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            column-gap: 14px !important;
-            row-gap: 18px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 2px !important;
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
         }
-        @media (min-width: 700px) {
-            .badgeList,
-            .userLikes .lazyLoadingList__list,
-            .collectionSection .lazyLoadingList__list,
-            .userNetwork .lazyLoadingList__list {
-                grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-            }
-            .tileGallery__slide,
-            .tileGallery__slide .playableTile,
-            .tileGallery__slide .playableTile__artwork {
-                flex: 0 0 180px !important;
-                width: 180px !important;
-                min-width: 180px !important;
-            }
-            .tileGallery__slide .playableTile__artwork {
-                height: 180px !important;
-            }
-        }
-        /* Keep vertical track lists & search results single-column */
-        .searchList .lazyLoadingList__list,
-        .stream .lazyLoadingList__list,
-        .soundList.lazyLoadingList__list,
-        .trackList__list {
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 12px !important;
-        }
-        /* Ensure loading spinners span full width instead of sitting in a ghost grid column */
-        .loading,
-        .lazyLoadingList__loading,
-        .paging-eof {
-            grid-column: 1 / -1 !important;
-            width: 100% !important;
-            margin: 18px auto !important;
-        }
-
         .badgeList__item {
             width: 100% !important;
             min-width: 0 !important;
@@ -598,49 +684,101 @@ enum WebViewScripts {
             height: auto !important;
             float: none !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 8px 2px !important;
+            border-bottom: 1px solid rgba(255,255,255,0.05) !important;
             box-sizing: border-box !important;
+        }
+        html.theme-light .badgeList__item {
+            border-bottom-color: rgba(0,0,0,0.06) !important;
         }
         .badgeList__item .playableTile {
             width: 100% !important;
             height: auto !important;
             display: flex !important;
-            flex-direction: column !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            gap: 13px !important;
         }
-        /* Neutralize SoundCloud's desktop padding-bottom/fixed-height mismatch that caused giant vertical gaps */
         .badgeList__item .playableTile__artwork {
             position: relative !important;
-            width: 100% !important;
-            height: auto !important;
-            aspect-ratio: 1 / 1 !important;
+            flex: 0 0 56px !important;
+            width: 56px !important;
+            height: 56px !important;
+            min-width: 56px !important;
+            max-width: 56px !important;
             padding: 0 !important;
             margin: 0 !important;
-            border-radius: 12px !important;
+            border-radius: 8px !important;
             overflow: hidden !important;
-            box-shadow: 0 6px 16px rgba(0,0,0,0.32) !important;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.3) !important;
         }
         .badgeList__item .playableTile__artworkLink,
         .badgeList__item .playableTile__artwork .image,
         .badgeList__item .playableTile__artwork .image__full {
             position: absolute !important;
             inset: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
+            width: 56px !important;
+            height: 56px !important;
             padding: 0 !important;
             margin: 0 !important;
             background-size: cover !important;
             background-position: center !important;
         }
+        .badgeList__item .playableTile__playButton {
+            position: absolute !important;
+            inset: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        .badgeList__item .playableTile__playButton .sc-button-play {
+            width: 30px !important;
+            height: 30px !important;
+            border-radius: 50% !important;
+            transform: scale(0.82) !important;
+        }
         .badgeList__item .playableTile__description {
-            margin-top: 8px !important;
-            padding: 0 2px !important;
+            flex: 1 !important;
+            min-width: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
             position: static !important;
             height: auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            gap: 3px !important;
         }
-        .playableTile__playButton .sc-button-play {
-            border-radius: 50% !important;
-            transform: scale(0.74) !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+        .badgeList__item .playableTile__heading {
+            font-size: 15px !important;
+            font-weight: 600 !important;
+            line-height: 1.25 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+        .badgeList__item .playableTile__usernameHeading {
+            font-size: 13px !important;
+            opacity: 0.65 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+        .loading,
+        .lazyLoadingList__loading,
+        .paging-eof {
+            width: 100% !important;
+            margin: 18px auto !important;
+        }
+
+        /* Keep vertical track lists & search results single-column */
+        .searchList .lazyLoadingList__list,
+        .stream .lazyLoadingList__list,
+        .soundList.lazyLoadingList__list,
+        .trackList__list {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 10px !important;
         }
 
         /* === SLEEK TRACK / PLAYLIST DETAIL HERO === */
@@ -679,7 +817,7 @@ enum WebViewScripts {
             margin: 0 !important;
         }
 
-        /* === MESHED FEED & SEARCH TRACK CARDS (Artwork BESIDE Play + Title, Waveform Below!) === */
+        /* === MESHED FEED & SEARCH TRACK CARDS === */
         .soundList__item {
             border: none !important;
             padding: 0 !important;
@@ -724,7 +862,6 @@ enum WebViewScripts {
             padding: 0 !important;
             background-size: cover !important;
         }
-        /* Promote header, waveform, footer into the card grid so artwork meshes directly beside title! */
         .sound__content {
             display: contents !important;
         }
@@ -796,8 +933,6 @@ enum WebViewScripts {
         .sc-button {
             border-radius: 999px !important;
         }
-
-        /* Clean Playlist Track Rows */
         .trackList__item {
             display: flex !important;
             align-items: center !important;
@@ -805,14 +940,11 @@ enum WebViewScripts {
             padding: 8px 6px !important;
             border-bottom: 1px solid rgba(255,255,255,0.06) !important;
         }
-
-        /* Clean empty search prompt */
         .searchList__empty {
             padding: 40px 16px !important;
             text-align: center !important;
             opacity: 0.7 !important;
         }
-
         input, textarea, select {
             font-size: 16px !important;
         }
@@ -843,7 +975,7 @@ enum WebViewScripts {
             }
 
             if (isDark) {
-              document.documentElement.style.setProperty('--background-base', '#121212');
+              document.documentElement.style.setProperty('--background-base', '#111111');
               document.documentElement.style.setProperty('--background-surface', '#1c1c1e');
               document.documentElement.style.setProperty('--text-base', '#ffffff');
             } else {
@@ -869,6 +1001,69 @@ enum WebViewScripts {
             upsertStyle('sc-rpc-adblock-cosmetic', `\(escapedAdCSS)`);
             upsertStyle('sc-rpc-mobile-layout', `\(escapedMobileCSS)`);
             upsertStyle('sc-rpc-custom-theme', `\(escapedCustomCSS)`);
+
+            // Inject SoundCloud iOS-style Home Quick-Access Banner ("Your likes" + 2x2 shortcuts) on /discover
+            function ensureHomeQuickCards() {
+              const existing = document.getElementById('sc-ios-home-quick');
+              const isDiscover = window.location.pathname === '/discover' || window.location.pathname === '/';
+              if (!(\(mobileAppLayout ? "true" : "false")) || !isDiscover) {
+                if (existing) existing.remove();
+                return;
+              }
+              if (existing) return;
+              const container = document.querySelector('.l-container.l-content .l-main') || document.querySelector('.l-container.l-content');
+              if (!container) return;
+
+              const wrap = document.createElement('div');
+              wrap.id = 'sc-ios-home-quick';
+              wrap.innerHTML = `
+                <div class="sc-likes-banner" data-nav="likes">
+                  <div class="sc-likes-left">
+                    <div class="sc-likes-icon">&#9829;</div>
+                    <div>
+                      <div class="sc-likes-title">Your likes</div>
+                      <div class="sc-likes-sub">Liked tracks &amp; favorites</div>
+                    </div>
+                  </div>
+                  <button type="button" class="sc-shuffle-pill" data-nav="likes_shuffle" aria-label="Shuffle Likes">&#8646;</button>
+                </div>
+                <div class="sc-quick-grid">
+                  <div class="sc-quick-card" data-nav="playlists">
+                    <div class="sc-quick-badge" style="background:rgba(255,85,0,0.18);color:#ff5500;">&#9835;</div>
+                    <div><div class="sc-quick-name">Playlists</div><div class="sc-quick-meta">Your sets</div></div>
+                  </div>
+                  <div class="sc-quick-card" data-nav="albums">
+                    <div class="sc-quick-badge" style="background:rgba(99,102,241,0.2);color:#818cf8;">&#9673;</div>
+                    <div><div class="sc-quick-name">Albums</div><div class="sc-quick-meta">Saved LPs</div></div>
+                  </div>
+                  <div class="sc-quick-card" data-nav="stations">
+                    <div class="sc-quick-badge" style="background:rgba(16,185,129,0.2);color:#34d399;">&#9737;</div>
+                    <div><div class="sc-quick-name">Stations</div><div class="sc-quick-meta">Radio mixes</div></div>
+                  </div>
+                  <div class="sc-quick-card" data-nav="history">
+                    <div class="sc-quick-badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;">&#8634;</div>
+                    <div><div class="sc-quick-name">History</div><div class="sc-quick-meta">Recently played</div></div>
+                  </div>
+                </div>
+              `;
+
+              wrap.addEventListener('click', (e) => {
+                const target = e.target.closest('[data-nav]');
+                if (!target) return;
+                e.stopPropagation();
+                const dest = target.getAttribute('data-nav');
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeNav) {
+                  window.webkit.messageHandlers.nativeNav.postMessage({ destination: dest });
+                }
+              });
+
+              container.insertBefore(wrap, container.firstChild);
+            }
+
+            ensureHomeQuickCards();
+            if (!window.__scHomeQuickTimer) {
+              window.__scHomeQuickTimer = setInterval(ensureHomeQuickCards, 1200);
+            }
           } catch (e) {}
         })();
         """
@@ -918,23 +1113,96 @@ enum WebViewScripts {
     })();
     """
 
+    static let playFirstTrackJS = """
+    (function(){
+      const firstPlay = document.querySelector('.badgeList__item .sc-button-play, .soundList__item .sc-button-play, .trackList__item .sc-button-play');
+      if (firstPlay) firstPlay.click();
+    })();
+    """
+
+    static let shuffleAndPlayJS = """
+    (function(){
+      const shuffleBtn = document.querySelector('.shuffleControl');
+      if (shuffleBtn && !shuffleBtn.classList.contains('m-shuffling')) {
+        shuffleBtn.click();
+      }
+      const items = document.querySelectorAll('.badgeList__item .sc-button-play, .soundList__item .sc-button-play');
+      if (items.length > 0) {
+        const pick = items[Math.floor(Math.random() * Math.min(items.length, 20))];
+        pick.click();
+      }
+    })();
+    """
+
+    static func filterVisibleListJS(query: String) -> String {
+        let escaped = jsTemplateEscape(query.lowercased())
+        return """
+        (function(){
+          const q = `\(escaped)`.trim();
+          const items = document.querySelectorAll('.badgeList__item, .soundList__item');
+          items.forEach((el) => {
+            if (!q) {
+              el.style.display = '';
+              return;
+            }
+            const txt = (el.textContent || '').toLowerCase();
+            el.style.display = txt.includes(q) ? '' : 'none';
+          });
+        })();
+        """
+    }
+
     static func seekToJS(fraction: Double) -> String {
         let clamped = min(1.0, max(0.0, fraction))
         return """
         (function(){
+          const frac = \(clamped);
+
+          // 1) Scrub SoundCloud's timeline bar using full pointer + mouse drag sequence (with real left:0 viewport coordinates)
           const bar = document.querySelector('.playbackTimeline__progressWrapper');
           if (bar) {
             const rect = bar.getBoundingClientRect();
-            const x = rect.left + rect.width * \(clamped);
-            const y = rect.top + rect.height / 2;
-            ['mousedown', 'mouseup', 'click'].forEach((type) => {
-              bar.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
-            });
-            return;
+            if (rect.width > 10) {
+              const x = rect.left + rect.width * frac;
+              const y = rect.top + rect.height / 2;
+              const common = {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: x,
+                clientY: y,
+                screenX: x,
+                screenY: y,
+                button: 0,
+                buttons: 1
+              };
+              try {
+                bar.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerId: 1, pointerType: 'mouse', isPrimary: true }, common)));
+              } catch (e) {}
+              bar.dispatchEvent(new MouseEvent('mousedown', common));
+              try {
+                document.dispatchEvent(new PointerEvent('pointermove', Object.assign({ pointerId: 1, pointerType: 'mouse', isPrimary: true }, common)));
+              } catch (e) {}
+              document.dispatchEvent(new MouseEvent('mousemove', common));
+              bar.dispatchEvent(new MouseEvent('mousemove', common));
+              try {
+                document.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerId: 1, pointerType: 'mouse', isPrimary: true }, common)));
+              } catch (e) {}
+              document.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, common, { buttons: 0 })));
+              bar.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, common, { buttons: 0 })));
+              bar.dispatchEvent(new MouseEvent('click', Object.assign({}, common, { buttons: 0 })));
+            }
           }
-          const audio = document.querySelector('audio');
+
+          // 2) Fallback: seek SoundCloud's captured active HTMLAudioElement directly (works even for detached new Audio()!)
+          const audio = window.__scActiveAudio || document.querySelector('audio');
           if (audio && isFinite(audio.duration) && audio.duration > 0) {
-            audio.currentTime = audio.duration * \(clamped);
+            const target = audio.duration * frac;
+            setTimeout(() => {
+              if (Math.abs(audio.currentTime - target) > 2.0) {
+                try { audio.currentTime = target; } catch (e) {}
+              }
+            }, 80);
           }
         })();
         """

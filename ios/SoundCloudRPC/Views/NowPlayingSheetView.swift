@@ -14,7 +14,7 @@ struct AirPlayPickerButton: UIViewRepresentable {
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
-/// Sleek custom Spotify / Apple Music-style interactive progress scrubber (no oversized system Slider thumb!)
+/// Sleek custom Spotify / SoundCloud-style interactive progress scrubber
 struct SleekScrubberBar: View {
     @Binding var progress: Double
     @Binding var isScrubbing: Bool
@@ -29,7 +29,7 @@ struct SleekScrubberBar: View {
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.24))
+                    .fill(Color.white.opacity(0.28))
                     .frame(height: barHeight)
 
                 Capsule()
@@ -39,19 +39,16 @@ struct SleekScrubberBar: View {
                 Circle()
                     .fill(Color.white)
                     .frame(width: thumbSize, height: thumbSize)
-                    .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1)
+                    .shadow(color: .black.opacity(0.45), radius: 4, x: 0, y: 1)
                     .offset(x: max(0, min(width - thumbSize, width * clamped - thumbSize / 2)))
             }
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
-            .gesture(
+            .highPriorityGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        if !isScrubbing {
-                            isScrubbing = true
-                        }
-                        let fraction = min(1.0, max(0.0, value.location.x / width))
-                        progress = fraction
+                        if !isScrubbing { isScrubbing = true }
+                        progress = min(1.0, max(0.0, value.location.x / width))
                     }
                     .onEnded { value in
                         let fraction = min(1.0, max(0.0, value.location.x / width))
@@ -62,7 +59,7 @@ struct SleekScrubberBar: View {
             )
             .animation(.easeOut(duration: 0.12), value: isScrubbing)
         }
-        .frame(height: 26)
+        .frame(height: 32)
     }
 }
 
@@ -75,6 +72,7 @@ struct NowPlayingSheetView: View {
 
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
+    @State private var pendingSeekFraction: Double? = nil
     @State private var showDiscordCard = false
     @State private var dismissDragOffset: CGFloat = 0
 
@@ -89,56 +87,79 @@ struct NowPlayingSheetView: View {
     }
 
     private var displayedProgress: Double {
-        isScrubbing ? scrubValue : track.progressFraction
+        if isScrubbing { return scrubValue }
+        if let pending = pendingSeekFraction { return pending }
+        return track.progressFraction
     }
 
     var body: some View {
         GeometryReader { geo in
-            let safeTop = geo.safeAreaInsets.top
-            let safeBottom = geo.safeAreaInsets.bottom
-            let maxContentWidth: CGFloat = sizeClass == .regular ? min(520, geo.size.width - 80) : geo.size.width - 44
-            let artSize: CGFloat = min(maxContentWidth, sizeClass == .regular ? 390 : max(260, geo.size.height * 0.40))
+            let maxContentWidth: CGFloat = sizeClass == .regular ? min(540, geo.size.width - 80) : geo.size.width - 40
 
             ZStack {
-                // Edge-to-edge full-screen blurred album artwork backdrop (covers Dynamic Island & entire phone!)
+                // === FULL-SCREEN SHARP EDGE-TO-EDGE ALBUM ARTWORK (Spotify Canvas / SoundCloud Fullscreen Style) ===
                 ZStack {
-                    Color(red: 0.06, green: 0.06, blue: 0.07)
+                    Color.black
                     if !track.highResArtwork.isEmpty {
                         AsyncImage(url: URL(string: track.highResArtwork)) { image in
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .frame(width: geo.size.width, height: geo.size.height + safeTop + safeBottom)
-                                .blur(radius: 70)
-                                .opacity(0.50)
+                                .frame(width: geo.size.width, height: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
                                 .clipped()
                         } placeholder: {
-                            EmptyView()
+                            LinearGradient(
+                                colors: [Color(red: 0.25, green: 0.1, blue: 0.02), Color.black],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         }
+                    } else {
+                        LinearGradient(
+                            colors: [Color(red: 0.25, green: 0.1, blue: 0.02), Color.black],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
                     }
-                    LinearGradient(
-                        colors: [Color.black.opacity(0.22), Color.black.opacity(0.84)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+
+                    // Cinematic top & bottom scrim gradients so floating UI stays razor-sharp over any artwork
+                    VStack(spacing: 0) {
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.72), Color.black.opacity(0.25), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 150)
+
+                        Spacer()
+
+                        LinearGradient(
+                            colors: [
+                                Color.clear,
+                                Color.black.opacity(0.45),
+                                Color.black.opacity(0.84),
+                                Color.black.opacity(0.96)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: max(390, geo.size.height * 0.52))
+                    }
                 }
                 .ignoresSafeArea()
 
+                // === FLOATING UI OVER FULL-SCREEN ARTWORK ===
                 VStack(spacing: 0) {
-                    // Subtle top drag pill + Spotify-style header bar
-                    Capsule()
-                        .fill(Color.white.opacity(0.32))
-                        .frame(width: 38, height: 4.5)
-                        .padding(.top, 8)
-
+                    // Top Bar: Down Chevron · Source Title · Share/More
                     HStack {
                         Button {
                             haptic(.light)
                             dismiss()
                         } label: {
                             Image(systemName: "chevron.down")
-                                .font(.system(size: 20, weight: .semibold))
+                                .font(.system(size: 21, weight: .semibold))
                                 .foregroundColor(.white)
+                                .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 1)
                                 .frame(width: 40, height: 40)
                         }
 
@@ -148,12 +169,13 @@ struct NowPlayingSheetView: View {
                             Text("PLAYING FROM SOUNDCLOUD")
                                 .font(.system(size: 10, weight: .semibold))
                                 .tracking(0.8)
-                                .foregroundColor(.white.opacity(0.65))
+                                .foregroundColor(.white.opacity(0.78))
                             Text(normalized.artist)
-                                .font(.caption.weight(.bold))
+                                .font(.subheadline.weight(.bold))
                                 .foregroundColor(.white)
                                 .lineLimit(1)
                         }
+                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
 
                         Spacer()
 
@@ -162,6 +184,7 @@ struct NowPlayingSheetView: View {
                                 Image(systemName: "ellipsis")
                                     .font(.system(size: 20, weight: .semibold))
                                     .foregroundColor(.white)
+                                    .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 1)
                                     .frame(width: 40, height: 40)
                             }
                         } else {
@@ -169,43 +192,41 @@ struct NowPlayingSheetView: View {
                         }
                     }
                     .padding(.horizontal, 14)
-                    .padding(.top, 4)
+                    .padding(.top, 8)
 
-                    Spacer(minLength: 16)
+                    Spacer()
 
-                    // Full-Impact Rounded Album Artwork
-                    AsyncImage(url: URL(string: track.highResArtwork)) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.white.opacity(0.1))
-                            .overlay(
-                                Image(systemName: "waveform")
-                                    .font(.system(size: 56, weight: .semibold))
-                                    .foregroundColor(.orange)
-                            )
-                    }
-                    .frame(width: artSize, height: artSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.55), radius: 28, x: 0, y: 14)
-                    .scaleEffect(track.isPlaying ? 1.0 : 0.92)
-                    .animation(.spring(response: 0.38, dampingFraction: 0.78), value: track.isPlaying)
-
-                    Spacer(minLength: 22)
-
-                    // Track Metadata + Scrubber + Transport Controls
+                    // Floating Bottom Controls Overlay (Spotify Full-Screen Canvas Layout)
                     VStack(spacing: 16) {
-                        HStack(alignment: .center, spacing: 14) {
-                            VStack(alignment: .leading, spacing: 4) {
+                        if showDiscordCard {
+                            RichPresencePreviewView(track: track, settings: settings)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
+
+                        // Compact Cover Thumbnail + Track Title + Artist + Like Button
+                        HStack(alignment: .center, spacing: 12) {
+                            AsyncImage(url: URL(string: track.highResArtwork)) { image in
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.white.opacity(0.15))
+                            }
+                            .frame(width: 50, height: 50)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.white.opacity(0.18), lineWidth: 0.75)
+                            )
+                            .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
+
+                            VStack(alignment: .leading, spacing: 3) {
                                 Text(normalized.track)
-                                    .font(.title2.weight(.bold))
+                                    .font(.title3.weight(.bold))
                                     .foregroundColor(.white)
                                     .lineLimit(1)
                                 Text(normalized.artist)
-                                    .font(.body.weight(.medium))
-                                    .foregroundColor(.white.opacity(0.72))
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundColor(.white.opacity(0.78))
                                     .lineLimit(1)
                             }
 
@@ -217,11 +238,11 @@ struct NowPlayingSheetView: View {
                             } label: {
                                 Image(systemName: track.isLiked ? "checkmark.circle.fill" : "plus.circle")
                                     .font(.system(size: 28, weight: .medium))
-                                    .foregroundColor(track.isLiked ? .orange : .white.opacity(0.85))
+                                    .foregroundColor(track.isLiked ? .orange : .white.opacity(0.9))
                             }
                         }
 
-                        // Custom Sleek Scrubber
+                        // Sleek Interactive Scrubber + Timestamps
                         VStack(spacing: 2) {
                             SleekScrubberBar(
                                 progress: Binding(
@@ -230,7 +251,13 @@ struct NowPlayingSheetView: View {
                                 ),
                                 isScrubbing: $isScrubbing
                             ) { committedFraction in
+                                pendingSeekFraction = committedFraction
                                 webController.seek(toFraction: committedFraction)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                                    if pendingSeekFraction == committedFraction {
+                                        pendingSeekFraction = nil
+                                    }
+                                }
                             }
 
                             HStack {
@@ -238,11 +265,11 @@ struct NowPlayingSheetView: View {
                                 Spacer()
                                 Text("-\(TrackTimeParser.format(max(0, track.durationSeconds - displayedProgress * track.durationSeconds)))")
                             }
-                            .font(.caption2.monospacedDigit().weight(.medium))
-                            .foregroundColor(.white.opacity(0.65))
+                            .font(.caption2.monospacedDigit().weight(.semibold))
+                            .foregroundColor(.white.opacity(0.72))
                         }
 
-                        // Spotify-style Transport Row
+                        // Transport Row: Shuffle · Prev · Big White Play/Pause · Next · Repeat
                         HStack(spacing: 0) {
                             Button {
                                 haptic(.light)
@@ -250,7 +277,7 @@ struct NowPlayingSheetView: View {
                             } label: {
                                 Image(systemName: "shuffle")
                                     .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(track.isShuffling ? .orange : .white.opacity(0.72))
+                                    .foregroundColor(track.isShuffling ? .orange : .white.opacity(0.8))
                             }
                             .frame(maxWidth: .infinity)
 
@@ -271,7 +298,8 @@ struct NowPlayingSheetView: View {
                                 ZStack {
                                     Circle()
                                         .fill(Color.white)
-                                        .frame(width: 68, height: 68)
+                                        .frame(width: 66, height: 66)
+                                        .shadow(color: .black.opacity(0.45), radius: 12, x: 0, y: 4)
                                     Image(systemName: track.isPlaying ? "pause.fill" : "play.fill")
                                         .font(.system(size: 26, weight: .bold))
                                         .foregroundColor(.black)
@@ -296,17 +324,12 @@ struct NowPlayingSheetView: View {
                             } label: {
                                 Image(systemName: track.repeatMode == "one" ? "repeat.1" : "repeat")
                                     .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(track.repeatMode == "none" ? .white.opacity(0.72) : .orange)
+                                    .foregroundColor(track.repeatMode == "none" ? .white.opacity(0.8) : .orange)
                             }
                             .frame(maxWidth: .infinity)
                         }
 
-                        if showDiscordCard {
-                            RichPresencePreviewView(track: track, settings: settings)
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
-                        }
-
-                        // Bottom Utility Row
+                        // Bottom Utility Row: AirPlay (left) · Shield + Discord + Share (right)
                         HStack(spacing: 20) {
                             AirPlayPickerButton()
                                 .frame(width: 28, height: 28)
@@ -322,7 +345,8 @@ struct NowPlayingSheetView: View {
                             .foregroundColor(.orange)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(Color.orange.opacity(0.18))
+                            .background(Color.black.opacity(0.45))
+                            .overlay(Capsule().stroke(Color.orange.opacity(0.45), lineWidth: 1))
                             .clipShape(Capsule())
 
                             Button {
@@ -333,21 +357,21 @@ struct NowPlayingSheetView: View {
                             } label: {
                                 Image(systemName: "gamecontroller.fill")
                                     .font(.system(size: 19))
-                                    .foregroundColor(showDiscordCard ? .orange : .white.opacity(0.8))
+                                    .foregroundColor(showDiscordCard ? .orange : .white.opacity(0.85))
                             }
 
                             if let shareURL = URL(string: track.url), !track.url.isEmpty {
                                 ShareLink(item: shareURL) {
                                     Image(systemName: "square.and.arrow.up")
                                         .font(.system(size: 19))
-                                        .foregroundColor(.white.opacity(0.85))
+                                        .foregroundColor(.white.opacity(0.9))
                                 }
                             }
                         }
-                        .padding(.top, 6)
+                        .padding(.top, 4)
                     }
                     .frame(maxWidth: maxContentWidth)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 22)
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
             }
@@ -360,7 +384,7 @@ struct NowPlayingSheetView: View {
                         }
                     }
                     .onEnded { value in
-                        if !isScrubbing && value.translation.height > 120 {
+                        if !isScrubbing && value.translation.height > 110 {
                             dismiss()
                         } else {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {

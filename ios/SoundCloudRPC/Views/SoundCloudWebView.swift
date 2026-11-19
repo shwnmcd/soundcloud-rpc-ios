@@ -3,25 +3,49 @@ import WebKit
 import UIKit
 
 enum LibrarySection: String, CaseIterable, Identifiable {
-    case overview = "Overview"
-    case likes = "Likes"
+    case likes = "Your likes"
     case playlists = "Playlists"
     case albums = "Albums"
-    case stations = "Stations"
     case following = "Following"
-    case history = "History"
+    case stations = "Stations"
+    case history = "Listening history"
+    case uploads = "Your uploads"
 
     var id: String { rawValue }
 
     var urlString: String {
         switch self {
-        case .overview: return "https://soundcloud.com/you/library"
         case .likes: return "https://soundcloud.com/you/likes"
         case .playlists: return "https://soundcloud.com/you/sets"
         case .albums: return "https://soundcloud.com/you/albums"
-        case .stations: return "https://soundcloud.com/you/stations"
         case .following: return "https://soundcloud.com/you/following"
+        case .stations: return "https://soundcloud.com/you/stations"
         case .history: return "https://soundcloud.com/you/history"
+        case .uploads: return "https://soundcloud.com/you/tracks"
+        }
+    }
+
+    var searchPlaceholder: String {
+        switch self {
+        case .likes: return "Search your likes"
+        case .playlists: return "Search playlists"
+        case .albums: return "Search albums"
+        case .following: return "Search following"
+        case .stations: return "Search stations"
+        case .history: return "Search history"
+        case .uploads: return "Search uploads"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .likes: return "heart.fill"
+        case .playlists: return "music.note.list"
+        case .albums: return "square.stack.fill"
+        case .following: return "person.2.fill"
+        case .stations: return "dot.radiowaves.left.and.right"
+        case .history: return "clock.fill"
+        case .uploads: return "arrow.up.circle.fill"
         }
     }
 }
@@ -55,15 +79,16 @@ final class WebViewController: ObservableObject {
     @Published var currentURL: URL? = URL(string: "https://soundcloud.com/discover")
     @Published var currentTrack: TrackInfo = TrackInfo()
 
+    var onNativeNav: ((String) -> Void)?
     weak var webView: WKWebView?
 
-    /// Returns true only when the user has navigated into a track, playlist, artist, or sub-page (not a root tab)
+    /// Returns true when user drilled into a track, playlist, artist, or sub-page outside root tab views
     var isDetailPage: Bool {
         guard canGoBack, let path = currentURL?.path.lowercased() else { return false }
         let rootPaths: Set<String> = [
             "", "/", "/discover", "/feed",
             "/search", "/search/sounds", "/search/people", "/search/albums", "/search/sets",
-            "/you/library", "/you/likes", "/you/sets", "/you/albums", "/you/stations", "/you/following", "/you/history"
+            "/you/library", "/you/likes", "/you/sets", "/you/albums", "/you/stations", "/you/following", "/you/history", "/you/tracks"
         ]
         let trimmed = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
         return !rootPaths.contains(trimmed)
@@ -78,29 +103,13 @@ final class WebViewController: ObservableObject {
         return "SoundCloud"
     }
 
-    func goBack() {
-        webView?.goBack()
-    }
+    func goBack() { webView?.goBack() }
+    func goForward() { webView?.goForward() }
+    func reload() { webView?.reload() }
 
-    func goForward() {
-        webView?.goForward()
-    }
-
-    func reload() {
-        webView?.reload()
-    }
-
-    func loadHome() {
-        load(urlString: "https://soundcloud.com/discover")
-    }
-
-    func loadFeed() {
-        load(urlString: "https://soundcloud.com/feed")
-    }
-
-    func loadLibrary(section: LibrarySection = .overview) {
-        load(urlString: section.urlString)
-    }
+    func loadHome() { load(urlString: "https://soundcloud.com/discover") }
+    func loadFeed() { load(urlString: "https://soundcloud.com/feed") }
+    func loadLibrary(section: LibrarySection) { load(urlString: section.urlString) }
 
     func loadSearch(query: String = "", filter: SearchFilter = .all) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -117,28 +126,17 @@ final class WebViewController: ObservableObject {
         webView?.load(URLRequest(url: url))
     }
 
-    func togglePlayPause() {
-        webView?.evaluateJavaScript(WebViewScripts.togglePlayPauseJS, completionHandler: nil)
-    }
+    func togglePlayPause() { webView?.evaluateJavaScript(WebViewScripts.togglePlayPauseJS, completionHandler: nil) }
+    func nextTrack() { webView?.evaluateJavaScript(WebViewScripts.nextTrackJS, completionHandler: nil) }
+    func previousTrack() { webView?.evaluateJavaScript(WebViewScripts.previousTrackJS, completionHandler: nil) }
+    func toggleLike() { webView?.evaluateJavaScript(WebViewScripts.toggleLikeJS, completionHandler: nil) }
+    func toggleShuffle() { webView?.evaluateJavaScript(WebViewScripts.toggleShuffleJS, completionHandler: nil) }
+    func cycleRepeat() { webView?.evaluateJavaScript(WebViewScripts.cycleRepeatJS, completionHandler: nil) }
+    func playFirstTrack() { webView?.evaluateJavaScript(WebViewScripts.playFirstTrackJS, completionHandler: nil) }
+    func shuffleAndPlay() { webView?.evaluateJavaScript(WebViewScripts.shuffleAndPlayJS, completionHandler: nil) }
 
-    func nextTrack() {
-        webView?.evaluateJavaScript(WebViewScripts.nextTrackJS, completionHandler: nil)
-    }
-
-    func previousTrack() {
-        webView?.evaluateJavaScript(WebViewScripts.previousTrackJS, completionHandler: nil)
-    }
-
-    func toggleLike() {
-        webView?.evaluateJavaScript(WebViewScripts.toggleLikeJS, completionHandler: nil)
-    }
-
-    func toggleShuffle() {
-        webView?.evaluateJavaScript(WebViewScripts.toggleShuffleJS, completionHandler: nil)
-    }
-
-    func cycleRepeat() {
-        webView?.evaluateJavaScript(WebViewScripts.cycleRepeatJS, completionHandler: nil)
+    func filterVisibleList(query: String) {
+        webView?.evaluateJavaScript(WebViewScripts.filterVisibleListJS(query: query), completionHandler: nil)
     }
 
     func seek(toFraction fraction: Double) {
@@ -214,8 +212,16 @@ struct SoundCloudWebView: UIViewRepresentable {
         let weakHandler = WeakScriptMessageHandler(delegate: context.coordinator)
         ucc.add(weakHandler, name: "trackUpdate")
         ucc.add(weakHandler, name: "adBlocked")
+        ucc.add(weakHandler, name: "nativeNav")
 
-        // Inject 4-layer runtime ad-guard BEFORE SoundCloud's JS initializes
+        // Always capture SoundCloud's detached HTMLAudioElement at document-start for reliable scrubbing
+        let captureScript = WKUserScript(
+            source: WebViewScripts.audioCaptureScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        ucc.addUserScript(captureScript)
+
         if settings.adBlockerEnabled {
             let guardScript = WKUserScript(
                 source: WebViewScripts.adBlockerRuntimeGuardScript,
@@ -225,7 +231,6 @@ struct SoundCloudWebView: UIViewRepresentable {
             ucc.addUserScript(guardScript)
         }
 
-        // Inject audio monitor at document end
         let monitorScript = WKUserScript(
             source: WebViewScripts.audioMonitorScript,
             injectionTime: .atDocumentEnd,
@@ -233,7 +238,6 @@ struct SoundCloudWebView: UIViewRepresentable {
         )
         ucc.addUserScript(monitorScript)
 
-        // Inject Dark Mode + Sleek Mobile App Layout + AdBlocker Cosmetics + Custom Theme CSS
         let initialThemeJS = WebViewScripts.themeAndCosmeticScript(
             isDark: settings.darkMode,
             mobileAppLayout: settings.mobileAppLayout,
@@ -242,7 +246,6 @@ struct SoundCloudWebView: UIViewRepresentable {
         )
         ucc.addUserScript(WKUserScript(source: initialThemeJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
 
-        // Apply compiled WebKit native Content Rule List (AdBlocker Layer 1)
         adBlocker.apply(to: ucc, enabled: settings.adBlockerEnabled)
 
         config.userContentController = ucc
@@ -252,12 +255,11 @@ struct SoundCloudWebView: UIViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         webView.isOpaque = false
-        webView.backgroundColor = settings.darkMode ? UIColor(red: 0.071, green: 0.071, blue: 0.071, alpha: 1) : .white
+        webView.backgroundColor = settings.darkMode ? UIColor(red: 0.067, green: 0.067, blue: 0.067, alpha: 1) : .white
         webView.scrollView.backgroundColor = webView.backgroundColor
         webView.scrollView.showsHorizontalScrollIndicator = false
         webView.scrollView.keyboardDismissMode = .onDrag
 
-        // Native iOS Pull-to-Refresh
         let refreshControl = UIRefreshControl()
         refreshControl.tintColor = UIColor.systemOrange
         refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.handlePullToRefresh(_:)), for: .valueChanged)
@@ -266,7 +268,6 @@ struct SoundCloudWebView: UIViewRepresentable {
         controller.webView = webView
         controller.applyUserAgent(desktopMode: settings.desktopMode)
 
-        // Wire Lock Screen / Control Center / AirPods remote commands (Play, Skip Track, & Scrubbing!)
         let ctrl = controller
         nowPlaying.onPlayPause = { [weak ctrl] in ctrl?.togglePlayPause() }
         nowPlaying.onNextTrack = { [weak ctrl] in ctrl?.nextTrack() }
@@ -283,7 +284,7 @@ struct SoundCloudWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        webView.backgroundColor = settings.darkMode ? UIColor(red: 0.071, green: 0.071, blue: 0.071, alpha: 1) : .white
+        webView.backgroundColor = settings.darkMode ? UIColor(red: 0.067, green: 0.067, blue: 0.067, alpha: 1) : .white
         webView.scrollView.backgroundColor = webView.backgroundColor
     }
 
@@ -385,6 +386,15 @@ struct SoundCloudWebView: UIViewRepresentable {
             if message.name == "adBlocked" {
                 Task { @MainActor in
                     self.parent.adBlocker.recordBlockedAd()
+                }
+                return
+            }
+
+            if message.name == "nativeNav",
+               let dict = message.body as? [String: Any],
+               let dest = dict["destination"] as? String {
+                Task { @MainActor in
+                    self.parent.controller.onNativeNav?(dest)
                 }
                 return
             }
