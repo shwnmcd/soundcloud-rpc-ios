@@ -69,6 +69,7 @@ struct NowPlayingSheetView: View {
     @ObservedObject var player: AudioPlayerService
     @ObservedObject var api: SoundCloudAPI
     @ObservedObject var settings: AppSettings
+    var onOpenArtist: ((SCUser) -> Void)? = nil
 
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
@@ -97,9 +98,18 @@ struct NowPlayingSheetView: View {
         return api.likedTrackIds.contains(id)
     }
 
+    private func openCurrentArtist() {
+        guard let artist = track?.user else { return }
+        haptic(.light)
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            onOpenArtist?(artist)
+        }
+    }
+
     var body: some View {
         ZStack {
-            // === TRUE EDGE-TO-EDGE FULL-SCREEN HD ARTWORK WITH SEAMLESS FADE-TO-BLACK TOP & BOTTOM ===
+            // === LAYER 1: FULL-SCREEN HD ARTWORK (non-hit-testing so buttons NEVER get blocked!) ===
             Color.black.ignoresSafeArea()
 
             GeometryReader { bgGeo in
@@ -110,8 +120,9 @@ struct NowPlayingSheetView: View {
                     .opacity(max(0.55, 1.0 - abs(swipeXOffset) / 360.0))
             }
             .ignoresSafeArea()
+            .allowsHitTesting(false)
 
-            // Seamless Fade-to-Black Top (integrates smoothly into Dynamic Island / Status Bar) & Rich Bottom Scrim
+            // === LAYER 2: FADE-TO-BLACK TOP & BOTTOM SCRIMS (non-hit-testing!) ===
             VStack(spacing: 0) {
                 LinearGradient(
                     stops: [
@@ -140,10 +151,11 @@ struct NowPlayingSheetView: View {
                 .frame(height: 440)
             }
             .ignoresSafeArea()
+            .allowsHitTesting(false)
 
-            // === FLOATING CONTROLS LAYER (Positioned Cleanly Above Bottom Safe Area) ===
+            // === LAYER 3: INTERACTIVE FOREGROUND CONTROLS (100% responsive taps!) ===
             VStack(spacing: 0) {
-                // Top Bar: Down Chevron · Source Title · Share/More
+                // Top Bar: Down Chevron · Clickable Artist Source · Real Action Menu
                 HStack {
                     Button {
                         haptic(.light)
@@ -152,66 +164,163 @@ struct NowPlayingSheetView: View {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 40, height: 40)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
 
                     Spacer()
 
-                    VStack(spacing: 2) {
-                        Text("PLAYING FROM SOUNDCLOUD")
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(0.8)
-                            .foregroundColor(.white.opacity(0.7))
-                        Text(normalized.artist)
-                            .font(.subheadline.weight(.bold))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    if let urlStr = track?.permalinkUrl, let shareURL = URL(string: urlStr) {
-                        ShareLink(item: shareURL) {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: 40, height: 40)
+                    Button {
+                        openCurrentArtist()
+                    } label: {
+                        VStack(spacing: 2) {
+                            Text("PLAYING FROM SOUNDCLOUD")
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.8)
+                                .foregroundColor(.white.opacity(0.7))
+                            HStack(spacing: 3) {
+                                Text(normalized.artist)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                if track?.user != nil {
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.white.opacity(0.65))
+                                }
+                            }
                         }
-                    } else {
-                        Color.clear.frame(width: 40, height: 40)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+
+                    Menu {
+                        if let artist = track?.user {
+                            Button {
+                                openCurrentArtist()
+                            } label: {
+                                Label("Go to \(artist.displayName)", systemImage: "person.circle")
+                            }
+                        }
+
+                        Button {
+                            player.toggleLikeCurrent()
+                        } label: {
+                            Label(isLiked ? "Unlike Track" : "Like Track", systemImage: isLiked ? "heart.slash" : "heart")
+                        }
+
+                        Button {
+                            showQueueSheet = true
+                        } label: {
+                            Label("View Up Next (\(player.queue.count))", systemImage: "list.bullet")
+                        }
+
+                        if let urlStr = track?.permalinkUrl, let shareURL = URL(string: urlStr) {
+                            ShareLink(item: shareURL) {
+                                Label("Share Track", systemImage: "square.and.arrow.up")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 12)
                 .padding(.top, 6)
 
-                Spacer()
+                // Dedicated Swipe Zone over the Middle Artwork Area (Swipe Left/Right = Next/Prev, Swipe Down = Dismiss — NEVER blocks buttons!)
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 20)
+                            .onChanged { value in
+                                let dx = value.translation.width
+                                let dy = value.translation.height
+                                if abs(dx) > abs(dy) {
+                                    swipeXOffset = dx
+                                } else if dy > 0 {
+                                    dismissDragOffset = dy
+                                }
+                            }
+                            .onEnded { value in
+                                let dx = value.translation.width
+                                let dy = value.translation.height
+                                if abs(dx) > abs(dy) {
+                                    if dx < -60 {
+                                        haptic(.medium)
+                                        player.nextTrack()
+                                    } else if dx > 60 {
+                                        haptic(.medium)
+                                        player.previousTrack()
+                                    }
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        swipeXOffset = 0
+                                    }
+                                } else if dy > 100 {
+                                    dismiss()
+                                } else {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        dismissDragOffset = 0
+                                        swipeXOffset = 0
+                                    }
+                                }
+                            }
+                    )
 
-                // Floating Playback Controls Block — Elevated & Cleanly Formatted!
+                // Floating Playback Controls Block — Every Button 100% Clickable!
                 VStack(spacing: 18) {
                     if showDiscordCard {
                         RichPresencePreviewView(track: player.currentTrackInfo, settings: settings)
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
 
-                    // Compact HD Cover + Title + Artist + Heart
+                    // Compact HD Cover + Title + Clickable Artist Name + Heart
                     HStack(alignment: .center, spacing: 12) {
-                        HDArtworkView(rawUrl: track?.rawArtwork, preferOriginal: false, cornerRadius: 8)
-                            .frame(width: 52, height: 52)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(Color.white.opacity(0.2), lineWidth: 0.75)
-                            )
-                            .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
+                        Button {
+                            openCurrentArtist()
+                        } label: {
+                            HDArtworkView(rawUrl: track?.rawArtwork, preferOriginal: false, cornerRadius: 8)
+                                .frame(width: 52, height: 52)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(Color.white.opacity(0.2), lineWidth: 0.75)
+                                )
+                                .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
+                        }
+                        .buttonStyle(.plain)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(normalized.track)
                                 .font(.system(size: 20, weight: .bold))
                                 .foregroundColor(.white)
                                 .lineLimit(1)
-                            Text(normalized.artist)
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(.white.opacity(0.75))
-                                .lineLimit(1)
+
+                            Button {
+                                openCurrentArtist()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(normalized.artist)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.82))
+                                        .lineLimit(1)
+                                    if track?.user != nil {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(.white.opacity(0.55))
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
 
                         Spacer(minLength: 8)
@@ -223,8 +332,10 @@ struct NowPlayingSheetView: View {
                             Image(systemName: isLiked ? "heart.fill" : "heart")
                                 .font(.system(size: 25, weight: .semibold))
                                 .foregroundColor(isLiked ? .orange : .white.opacity(0.88))
-                                .frame(width: 40, height: 40)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                     .offset(x: swipeXOffset * 0.22)
 
@@ -249,7 +360,7 @@ struct NowPlayingSheetView: View {
                         .foregroundColor(.white.opacity(0.68))
                     }
 
-                    // Balanced Primary Transport Row: Shuffle · Prev · Play/Pause · Next · Repeat
+                    // Primary Transport Row: Shuffle · Prev · Play/Pause · Next · Repeat
                     HStack(alignment: .center, spacing: 0) {
                         Button {
                             haptic(.light)
@@ -258,8 +369,10 @@ struct NowPlayingSheetView: View {
                             Image(systemName: "shuffle")
                                 .font(.system(size: 19, weight: .semibold))
                                 .foregroundColor(player.isShuffling ? .orange : .white.opacity(0.78))
-                                .frame(width: 44, height: 44)
+                                .frame(width: 48, height: 48)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .frame(maxWidth: .infinity)
 
                         Button {
@@ -269,8 +382,10 @@ struct NowPlayingSheetView: View {
                             Image(systemName: "backward.end.fill")
                                 .font(.system(size: 27, weight: .semibold))
                                 .foregroundColor(.white)
-                                .frame(width: 50, height: 50)
+                                .frame(width: 54, height: 54)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .frame(maxWidth: .infinity)
 
                         Button {
@@ -291,7 +406,9 @@ struct NowPlayingSheetView: View {
                                         .offset(x: player.isPlaying ? 0 : 2)
                                 }
                             }
+                            .contentShape(Circle())
                         }
+                        .buttonStyle(.plain)
                         .frame(maxWidth: .infinity)
 
                         Button {
@@ -301,8 +418,10 @@ struct NowPlayingSheetView: View {
                             Image(systemName: "forward.end.fill")
                                 .font(.system(size: 27, weight: .semibold))
                                 .foregroundColor(.white)
-                                .frame(width: 50, height: 50)
+                                .frame(width: 54, height: 54)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .frame(maxWidth: .infinity)
 
                         Button {
@@ -312,8 +431,10 @@ struct NowPlayingSheetView: View {
                             Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
                                 .font(.system(size: 19, weight: .semibold))
                                 .foregroundColor(player.repeatMode == .none ? .white.opacity(0.78) : .orange)
-                                .frame(width: 44, height: 44)
+                                .frame(width: 48, height: 48)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .frame(maxWidth: .infinity)
                     }
                     .padding(.vertical, 2)
@@ -321,7 +442,7 @@ struct NowPlayingSheetView: View {
                     // Elevated Utility Dock: AirPlay · Discord RPC · Share · Queue
                     HStack(spacing: 0) {
                         AirPlayPickerButton()
-                            .frame(width: 28, height: 28)
+                            .frame(width: 30, height: 30)
                             .frame(maxWidth: .infinity)
 
                         Button {
@@ -333,8 +454,10 @@ struct NowPlayingSheetView: View {
                             Image(systemName: "gamecontroller.fill")
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(showDiscordCard ? .orange : .white.opacity(0.82))
-                                .frame(width: 40, height: 36)
+                                .frame(width: 44, height: 40)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .frame(maxWidth: .infinity)
 
                         if let urlStr = track?.permalinkUrl, let shareURL = URL(string: urlStr) {
@@ -342,7 +465,8 @@ struct NowPlayingSheetView: View {
                                 Image(systemName: "square.and.arrow.up")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundColor(.white.opacity(0.85))
-                                    .frame(width: 40, height: 36)
+                                    .frame(width: 44, height: 40)
+                                    .contentShape(Rectangle())
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -354,8 +478,10 @@ struct NowPlayingSheetView: View {
                             Image(systemName: "list.bullet")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(.white.opacity(0.88))
-                                .frame(width: 40, height: 36)
+                                .frame(width: 44, height: 40)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .frame(maxWidth: .infinity)
                     }
                     .padding(.vertical, 6)
@@ -369,45 +495,6 @@ struct NowPlayingSheetView: View {
             }
         }
         .offset(y: max(0, dismissDragOffset))
-        // Swipe Left/Right to Skip Tracks in Queue, OR Swipe Down to Dismiss!
-        .gesture(
-            DragGesture(minimumDistance: 18)
-                .onChanged { value in
-                    guard !isScrubbing else { return }
-                    let dx = value.translation.width
-                    let dy = value.translation.height
-                    if abs(dx) > abs(dy) {
-                        swipeXOffset = dx
-                    } else if dy > 0 {
-                        dismissDragOffset = dy
-                    }
-                }
-                .onEnded { value in
-                    guard !isScrubbing else { return }
-                    let dx = value.translation.width
-                    let dy = value.translation.height
-
-                    if abs(dx) > abs(dy) {
-                        if dx < -65 {
-                            haptic(.medium)
-                            player.nextTrack()
-                        } else if dx > 65 {
-                            haptic(.medium)
-                            player.previousTrack()
-                        }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            swipeXOffset = 0
-                        }
-                    } else if dy > 110 {
-                        dismiss()
-                    } else {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            dismissDragOffset = 0
-                            swipeXOffset = 0
-                        }
-                    }
-                }
-        )
         .sheet(isPresented: $showQueueSheet) {
             NavigationStack {
                 List {

@@ -1,9 +1,22 @@
 import Foundation
 
+struct SCArtistProfile {
+    let user: SCUser?
+    let spotlightTracks: [SCTrack]
+    let spotlightPlaylists: [SCPlaylist]
+    let topTracks: [SCTrack]
+    let albums: [SCPlaylist]
+    let playlists: [SCPlaylist]
+    let tracks: [SCTrack]
+    let reposts: [SCTrack]
+    let likes: [SCTrack]
+}
+
 @MainActor
 final class SoundCloudAPI: ObservableObject {
     @Published var currentUser: SCUser?
     @Published var likedTrackIds: Set<Int> = []
+    @Published var followingUserIds: Set<Int> = []
     @Published var lastError: String?
 
     weak var authBridge: SoundCloudAuthBridge?
@@ -288,15 +301,40 @@ final class SoundCloudAPI: ObservableObject {
     func fetchFollowing() async -> [SCUser] {
         guard let userId = currentUser?.id else { return [] }
         do {
-            let data = try await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/followings?limit=60")
+            let data = try await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/followings?limit=100")
             guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let collection = root["collection"] as? [[String: Any]] else { return [] }
-            return collection.compactMap { entry in
+            let users: [SCUser] = collection.compactMap { entry in
                 guard let uData = try? JSONSerialization.data(withJSONObject: entry) else { return nil }
                 return try? decoder.decode(SCUser.self, from: uData)
             }
+            for u in users { followingUserIds.insert(u.id) }
+            return users
         } catch {
             return []
+        }
+    }
+
+    func toggleFollow(userId: Int) async -> Bool {
+        let currentlyFollowing = followingUserIds.contains(userId)
+        if currentlyFollowing {
+            followingUserIds.remove(userId)
+        } else {
+            followingUserIds.insert(userId)
+        }
+        do {
+            _ = try await requestData(
+                urlString: "https://api-v2.soundcloud.com/me/followings/\(userId)",
+                method: currentlyFollowing ? "DELETE" : "PUT"
+            )
+            return !currentlyFollowing
+        } catch {
+            if currentlyFollowing {
+                followingUserIds.insert(userId)
+            } else {
+                followingUserIds.remove(userId)
+            }
+            return currentlyFollowing
         }
     }
 
@@ -319,8 +357,46 @@ final class SoundCloudAPI: ObservableObject {
         return try? decoder.decode(SCUser.self, from: data)
     }
 
+    private func fetchUserSpotlight(userId: Int) async -> (tracks: [SCTrack], playlists: [SCPlaylist]) {
+        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/spotlight?limit=15"),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let col = root["collection"] as? [[String: Any]] else { return ([], []) }
+        var tracks: [SCTrack] = []
+        var playlists: [SCPlaylist] = []
+        for entry in col {
+            let kind = entry["kind"] as? String ?? ""
+            guard let d = try? JSONSerialization.data(withJSONObject: entry) else { continue }
+            if kind == "track", let t = try? decoder.decode(SCTrack.self, from: d) {
+                tracks.append(t)
+            } else if kind == "playlist", let p = try? decoder.decode(SCPlaylist.self, from: d) {
+                playlists.append(p)
+            }
+        }
+        return (tracks, playlists)
+    }
+
+    private func fetchUserTopTracks(userId: Int) async -> [SCTrack] {
+        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/toptracks?limit=25"),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let col = root["collection"] as? [[String: Any]] else { return [] }
+        return col.compactMap { entry in
+            guard let d = try? JSONSerialization.data(withJSONObject: entry) else { return nil }
+            return try? decoder.decode(SCTrack.self, from: d)
+        }
+    }
+
+    private func fetchUserAlbums(userId: Int) async -> [SCPlaylist] {
+        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/albums?limit=20"),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let col = root["collection"] as? [[String: Any]] else { return [] }
+        return col.compactMap { entry in
+            guard let d = try? JSONSerialization.data(withJSONObject: entry) else { return nil }
+            return try? decoder.decode(SCPlaylist.self, from: d)
+        }
+    }
+
     private func fetchUserPlaylists(userId: Int) async -> [SCPlaylist] {
-        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/playlists?limit=20"),
+        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/playlists_without_albums?limit=20"),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let col = root["collection"] as? [[String: Any]] else { return [] }
         return col.compactMap { entry in
@@ -330,7 +406,7 @@ final class SoundCloudAPI: ObservableObject {
     }
 
     private func fetchUserReposts(userId: Int) async -> [SCTrack] {
-        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/stream/users/\(userId)/reposts?limit=20"),
+        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/stream/users/\(userId)/reposts?limit=25"),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let col = root["collection"] as? [[String: Any]] else { return [] }
         return col.compactMap { entry in
@@ -341,7 +417,7 @@ final class SoundCloudAPI: ObservableObject {
     }
 
     private func fetchUserLikes(userId: Int) async -> [SCTrack] {
-        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/track_likes?limit=20"),
+        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/track_likes?limit=25"),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let col = root["collection"] as? [[String: Any]] else { return [] }
         return col.compactMap { entry in
@@ -351,13 +427,30 @@ final class SoundCloudAPI: ObservableObject {
         }
     }
 
-    func fetchUserProfile(userId: Int) async -> (user: SCUser?, playlists: [SCPlaylist], reposts: [SCTrack], likes: [SCTrack], tracks: [SCTrack]) {
+    func fetchArtistProfile(userId: Int) async -> SCArtistProfile {
         async let userTask = fetchUser(userId: userId)
+        async let spotlightTask = fetchUserSpotlight(userId: userId)
+        async let topTracksTask = fetchUserTopTracks(userId: userId)
+        async let albumsTask = fetchUserAlbums(userId: userId)
         async let playlistsTask = fetchUserPlaylists(userId: userId)
+        async let tracksTask = fetchUserTracks(userId: userId)
         async let repostsTask = fetchUserReposts(userId: userId)
         async let likesTask = fetchUserLikes(userId: userId)
-        async let tracksTask = fetchUserTracks(userId: userId)
-        return await (userTask, playlistsTask, repostsTask, likesTask, tracksTask)
+
+        let (u, spot, top, albs, pls, trks, reps, lks) = await (
+            userTask, spotlightTask, topTracksTask, albumsTask, playlistsTask, tracksTask, repostsTask, likesTask
+        )
+        return SCArtistProfile(
+            user: u,
+            spotlightTracks: spot.tracks,
+            spotlightPlaylists: spot.playlists,
+            topTracks: top,
+            albums: albs,
+            playlists: pls,
+            tracks: trks,
+            reposts: reps,
+            likes: lks
+        )
     }
 
     // MARK: - Search

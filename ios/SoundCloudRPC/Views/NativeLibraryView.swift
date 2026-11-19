@@ -597,226 +597,465 @@ struct NativePlaylistDetailView: View {
     }
 }
 
-// MARK: - Official SoundCloud iOS Artist Profile Screen (Matches Screenshots 4 & 5: eKronic!)
+// MARK: - Official SoundCloud iOS Artist Profile Screen (Matches Just A Gent Reference!)
 struct NativeArtistProfileView: View {
     let user: SCUser
+    var customDismiss: (() -> Void)? = nil
+
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var api: SoundCloudAPI
     @EnvironmentObject var player: AudioPlayerService
 
-    @State private var fullUser: SCUser?
-    @State private var playlists: [SCPlaylist] = []
-    @State private var tracks: [SCTrack] = []
-    @State private var reposts: [SCTrack] = []
-    @State private var likes: [SCTrack] = []
+    @State private var profile: SCArtistProfile?
     @State private var isLoading = true
+    @State private var selectedArtist: SCUser?
 
-    private var activeUser: SCUser { fullUser ?? user }
-    private var allArtistTracks: [SCTrack] {
-        tracks.isEmpty ? (reposts.isEmpty ? likes : reposts) : tracks
+    private var activeUser: SCUser { profile?.user ?? user }
+    private var isFollowing: Bool { api.followingUserIds.contains(activeUser.id) }
+
+    private var primaryPlayList: [SCTrack] {
+        guard let p = profile else { return [] }
+        if !p.topTracks.isEmpty { return p.topTracks }
+        if !p.tracks.isEmpty { return p.tracks }
+        if !p.spotlightTracks.isEmpty { return p.spotlightTracks }
+        if !p.reposts.isEmpty { return p.reposts }
+        return p.likes
+    }
+
+    private func goBack() {
+        if let custom = customDismiss {
+            custom()
+        } else {
+            dismiss()
+        }
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                // Full-Bleed Banner + Circular Avatar
-                ZStack(alignment: .bottomLeading) {
-                    ZStack(alignment: .top) {
-                        if let banner = activeUser.bannerUrl, !banner.isEmpty {
-                            AsyncImage(url: URL(string: banner)) { img in
-                                img.resizable().aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Color(red: 0.22, green: 0.08, blue: 0.06)
-                            }
-                            .frame(height: 150)
-                            .clipped()
-                        } else {
-                            LinearGradient(
-                                colors: [Color(red: 0.32, green: 0.1, blue: 0.05), Color(red: 0.08, green: 0.08, blue: 0.09)],
-                                startPoint: .top,
-                                endPoint: .bottom
+        VStack(spacing: 0) {
+            // Pinned Sticky Official SoundCloud iOS Top Bar (< · Mini Avatar + Artist Name · •••)
+            ZStack {
+                HStack {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        goBack()
+                    } label: {
+                        Circle()
+                            .fill(Color.white.opacity(0.11))
+                            .frame(width: 34, height: 34)
+                            .overlay(
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.white)
                             )
-                            .frame(height: 150)
+                    }
+
+                    Spacer()
+
+                    Menu {
+                        Button {
+                            Task { _ = await api.toggleFollow(userId: activeUser.id) }
+                        } label: {
+                            Label(isFollowing ? "Unfollow" : "Follow", systemImage: isFollowing ? "person.badge.minus" : "person.badge.plus")
                         }
 
-                        HStack {
-                            Button { dismiss() } label: {
-                                Circle()
-                                    .fill(Color.black.opacity(0.45))
-                                    .frame(width: 34, height: 34)
-                                    .overlay(
-                                        Image(systemName: "chevron.left")
-                                            .font(.system(size: 15, weight: .bold))
-                                            .foregroundColor(.white)
-                                    )
+                        if !primaryPlayList.isEmpty {
+                            Button {
+                                player.playShuffled(list: primaryPlayList)
+                            } label: {
+                                Label("Shuffle Artist Tracks", systemImage: "shuffle")
                             }
-                            Spacer()
-                            if let urlStr = activeUser.permalinkUrl, let shareURL = URL(string: urlStr) {
-                                ShareLink(item: shareURL) {
-                                    Circle()
-                                        .fill(Color.black.opacity(0.45))
-                                        .frame(width: 34, height: 34)
-                                        .overlay(
-                                            Image(systemName: "ellipsis")
-                                                .font(.system(size: 15, weight: .bold))
-                                                .foregroundColor(.white)
-                                        )
+                        }
+
+                        if let urlStr = activeUser.permalinkUrl, let shareURL = URL(string: urlStr) {
+                            ShareLink(item: shareURL) {
+                                Label("Share Artist", systemImage: "square.and.arrow.up")
+                            }
+                        }
+                    } label: {
+                        Circle()
+                            .fill(Color.white.opacity(0.11))
+                            .frame(width: 34, height: 34)
+                            .overlay(
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.white)
+                            )
+                    }
+                }
+
+                // Centered Mini Avatar + Artist Name (exact Just A Gent reference!)
+                HStack(spacing: 8) {
+                    HDArtworkView(rawUrl: activeUser.avatarUrl, cornerRadius: 13)
+                        .frame(width: 26, height: 26)
+                        .clipShape(Circle())
+                    Text(activeUser.displayName)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 52)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+            .padding(.bottom, 10)
+            .background(Color(red: 0.067, green: 0.067, blue: 0.067))
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    // Bounded Hero Banner + Circular Avatar (NEVER widens view beyond screen width!)
+                    ZStack(alignment: .bottomLeading) {
+                        Color.clear
+                            .frame(height: 128)
+                            .overlay {
+                                if let banner = activeUser.bannerUrl, !banner.isEmpty {
+                                    AsyncImage(url: URL(string: banner)) { phase in
+                                        switch phase {
+                                        case .success(let img):
+                                            img.resizable().aspectRatio(contentMode: .fill)
+                                        default:
+                                            fallbackBannerGradient
+                                        }
+                                    }
+                                } else {
+                                    fallbackBannerGradient
                                 }
                             }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.top, 10)
-                    }
-                    .padding(.bottom, 42)
-
-                    HDArtworkView(rawUrl: activeUser.avatarUrl, cornerRadius: 46)
-                        .frame(width: 92, height: 92)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Color(red: 0.067, green: 0.067, blue: 0.067), lineWidth: 3))
-                        .padding(.leading, 14)
-                }
-
-                // Name, Followers & Shuffle / Play Row
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(activeUser.displayName)
-                        .font(.system(size: 23, weight: .bold))
-                        .foregroundColor(.white)
-
-                    Text("\(activeUser.followersCount ?? 0) Followers · \(activeUser.followingsCount ?? 0) Following")
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(white: 0.65))
-
-                    HStack {
-                        Spacer()
-                        Button {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            player.playShuffled(list: allArtistTracks)
-                        } label: {
-                            Image(systemName: "shuffle")
-                                .font(.system(size: 19, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.9))
-                                .frame(width: 42, height: 42)
-                        }
-                        .disabled(allArtistTracks.isEmpty)
-
-                        Button {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            if let first = allArtistTracks.first {
-                                player.play(track: first, in: allArtistTracks)
-                            }
-                        } label: {
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 48, height: 48)
-                                .overlay(
-                                    Image(systemName: "play.fill")
-                                        .font(.system(size: 18, weight: .bold))
-                                        .foregroundColor(.black)
-                                        .offset(x: 1.5)
+                            .overlay(
+                                LinearGradient(
+                                    colors: [Color.clear, Color(red: 0.067, green: 0.067, blue: 0.067)],
+                                    startPoint: .center,
+                                    endPoint: .bottom
                                 )
+                            )
+                            .clipped()
+                            .padding(.bottom, 38)
+
+                        HDArtworkView(rawUrl: activeUser.avatarUrl, cornerRadius: 42)
+                            .frame(width: 84, height: 84)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color(red: 0.067, green: 0.067, blue: 0.067), lineWidth: 3))
+                            .padding(.leading, 16)
+                    }
+
+                    // Artist Name, Followers & Follow / Shuffle / Play Controls
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(activeUser.displayName)
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.white)
+
+                        Text("\(formatCompactCount(activeUser.followersCount ?? 0)) Followers · \(formatCompactCount(activeUser.followingsCount ?? 0)) Following")
+                            .font(.system(size: 13.5))
+                            .foregroundColor(Color(white: 0.65))
+
+                        HStack(spacing: 12) {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                Task { _ = await api.toggleFollow(userId: activeUser.id) }
+                            } label: {
+                                Text(isFollowing ? "Following" : "Follow")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(isFollowing ? .white : .black)
+                                    .padding(.horizontal, 18)
+                                    .padding(.vertical, 8)
+                                    .background(isFollowing ? Color.white.opacity(0.14) : Color.white)
+                                    .clipShape(Capsule())
+                            }
+
+                            Spacer()
+
+                            Button {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                player.playShuffled(list: primaryPlayList)
+                            } label: {
+                                Image(systemName: "shuffle")
+                                    .font(.system(size: 19, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .frame(width: 42, height: 42)
+                            }
+                            .disabled(primaryPlayList.isEmpty)
+
+                            Button {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                if let first = primaryPlayList.first {
+                                    player.play(track: first, in: primaryPlayList)
+                                }
+                            } label: {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 46, height: 46)
+                                    .overlay(
+                                        Image(systemName: "play.fill")
+                                            .font(.system(size: 18, weight: .bold))
+                                            .foregroundColor(.black)
+                                            .offset(x: 1.5)
+                                    )
+                            }
+                            .disabled(primaryPlayList.isEmpty)
                         }
-                        .disabled(allArtistTracks.isEmpty)
+                        .padding(.top, 4)
                     }
-                    .padding(.top, 4)
-                }
-                .padding(.horizontal, 14)
+                    .padding(.horizontal, 16)
 
-                if isLoading {
-                    HStack {
-                        Spacer()
-                        ProgressView().tint(.orange).padding(.vertical, 30)
-                        Spacer()
-                    }
-                } else {
-                    // Playlists Horizontal Grid (Matches Screenshots 4 & 5!)
-                    if !playlists.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Playlists")
-                                .font(.system(size: 19, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 14)
+                    if isLoading {
+                        HStack {
+                            Spacer()
+                            ProgressView().tint(.orange).padding(.vertical, 36)
+                            Spacer()
+                        }
+                    } else if let p = profile {
+                        // 1. Spotlight (Matches Just A Gent reference!)
+                        if !p.spotlightTracks.isEmpty || !p.spotlightPlaylists.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Spotlight")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
 
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHStack(alignment: .top, spacing: 12) {
-                                    ForEach(playlists) { pl in
-                                        NavigationLink {
-                                            NativePlaylistDetailView(playlist: pl)
-                                        } label: {
-                                            VStack(alignment: .leading, spacing: 5) {
-                                                HDArtworkView(rawUrl: pl.rawArtwork, cornerRadius: 6)
-                                                    .frame(width: 148, height: 148)
-                                                Text(pl.displayTitle)
-                                                    .font(.system(size: 13.5, weight: .semibold))
-                                                    .foregroundColor(.white)
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    LazyHStack(alignment: .top, spacing: 12) {
+                                        ForEach(p.spotlightTracks) { track in
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                HDArtworkView(rawUrl: track.rawArtwork, cornerRadius: 8)
+                                                    .frame(width: 146, height: 146)
+                                                Text(track.displayTitle)
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundColor(player.currentTrack?.id == track.id ? .orange : .white)
                                                     .lineLimit(1)
-                                                    .frame(width: 148, alignment: .leading)
-                                                Text(pl.creatorName)
-                                                    .font(.system(size: 12))
+                                                    .frame(width: 146, alignment: .leading)
+                                                Text(track.artistName)
+                                                    .font(.system(size: 12.5))
                                                     .foregroundColor(Color(white: 0.62))
                                                     .lineLimit(1)
+                                                    .frame(width: 146, alignment: .leading)
+                                            }
+                                            .onTapGesture {
+                                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                                player.play(track: track, in: p.spotlightTracks)
+                                            }
+                                        }
+
+                                        ForEach(p.spotlightPlaylists) { pl in
+                                            NavigationLink {
+                                                NativePlaylistDetailView(playlist: pl)
+                                            } label: {
+                                                VStack(alignment: .leading, spacing: 6) {
+                                                    HDArtworkView(rawUrl: pl.rawArtwork, cornerRadius: 8)
+                                                        .frame(width: 146, height: 146)
+                                                    Text(pl.displayTitle)
+                                                        .font(.system(size: 14, weight: .semibold))
+                                                        .foregroundColor(.white)
+                                                        .lineLimit(1)
+                                                        .frame(width: 146, alignment: .leading)
+                                                    Text(pl.creatorName)
+                                                        .font(.system(size: 12.5))
+                                                        .foregroundColor(Color(white: 0.62))
+                                                        .lineLimit(1)
+                                                        .frame(width: 146, alignment: .leading)
+                                                }
                                             }
                                         }
                                     }
+                                    .padding(.horizontal, 16)
                                 }
-                                .padding(.horizontal, 14)
                             }
+                        }
+
+                        // 2. Top tracks (Matches Just A Gent reference!)
+                        if !p.topTracks.isEmpty {
+                            artistTrackSection(title: "Top tracks", list: p.topTracks, previewCount: 3)
+                        }
+
+                        // 3. Albums (Matches Just A Gent reference!)
+                        if !p.albums.isEmpty {
+                            artistPlaylistCarousel(title: "Albums", items: p.albums)
+                        }
+
+                        // 4. Playlists
+                        if !p.playlists.isEmpty {
+                            artistPlaylistCarousel(title: "Playlists", items: p.playlists)
+                        }
+
+                        // 5. Tracks
+                        if !p.tracks.isEmpty {
+                            artistTrackSection(title: "Tracks", list: p.tracks, previewCount: 4)
+                        }
+
+                        // 6. Reposts
+                        if !p.reposts.isEmpty {
+                            artistTrackSection(title: "Reposts", list: p.reposts, previewCount: 4)
+                        }
+
+                        // 7. Likes
+                        if !p.likes.isEmpty {
+                            artistTrackSection(title: "Likes", list: p.likes, previewCount: 4)
                         }
                     }
 
-                    // Tracks
-                    if !tracks.isEmpty {
-                        sectionTrackList(title: "Tracks", list: tracks)
-                    }
-
-                    // Reposts (Matches Screenshot 5!)
-                    if !reposts.isEmpty {
-                        sectionTrackList(title: "Reposts", list: reposts)
-                    }
-
-                    // Likes (Matches Screenshot 5!)
-                    if !likes.isEmpty {
-                        sectionTrackList(title: "Likes", list: likes)
-                    }
+                    Spacer(minLength: 150)
                 }
-
-                Spacer(minLength: 140)
             }
         }
         .background(Color(red: 0.067, green: 0.067, blue: 0.067).ignoresSafeArea())
         .navigationBarHidden(true)
         .task {
             isLoading = true
-            let res = await api.fetchUserProfile(userId: user.id)
-            self.fullUser = res.user
-            self.playlists = res.playlists
-            self.reposts = res.reposts
-            self.likes = res.likes
-            self.tracks = res.tracks
+            profile = await api.fetchArtistProfile(userId: user.id)
             isLoading = false
+        }
+        .navigationDestination(isPresented: Binding(
+            get: { selectedArtist != nil },
+            set: { if !$0 { selectedArtist = nil } }
+        )) {
+            if let artist = selectedArtist {
+                NativeArtistProfileView(user: artist)
+            }
         }
     }
 
-    private func sectionTrackList(title: String, list: [SCTrack]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private var fallbackBannerGradient: some View {
+        LinearGradient(
+            colors: [Color(red: 0.34, green: 0.12, blue: 0.04), Color(red: 0.08, green: 0.08, blue: 0.09)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private func artistPlaylistCarousel(title: String, items: [SCPlaylist]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.system(size: 19, weight: .bold))
+                .font(.system(size: 20, weight: .bold))
                 .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.top, 4)
+                .padding(.horizontal, 16)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 12) {
+                    ForEach(items) { pl in
+                        NavigationLink {
+                            NativePlaylistDetailView(playlist: pl)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HDArtworkView(rawUrl: pl.rawArtwork, cornerRadius: 8)
+                                    .frame(width: 146, height: 146)
+                                Text(pl.displayTitle)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                    .frame(width: 146, alignment: .leading)
+                                Text(pl.creatorName)
+                                    .font(.system(size: 12.5))
+                                    .foregroundColor(Color(white: 0.62))
+                                    .lineLimit(1)
+                                    .frame(width: 146, alignment: .leading)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    private func artistTrackSection(title: String, list: [SCTrack], previewCount: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+                Spacer()
+                if list.count > previewCount {
+                    NavigationLink {
+                        NativeTrackListDetailView(title: "\(activeUser.displayName) · \(title)", tracks: list)
+                    } label: {
+                        Text("See all")
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundColor(Color(white: 0.72))
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
 
             LazyVStack(spacing: 0) {
-                ForEach(list.prefix(15)) { track in
+                ForEach(list.prefix(previewCount)) { track in
                     SCTrackRowView(
                         track: track,
                         isCurrentlyPlaying: player.currentTrack?.id == track.id,
                         isLiked: api.likedTrackIds.contains(track.id),
                         onTapPlay: { player.play(track: track, in: list) },
-                        onToggleLike: { Task { _ = await api.toggleLike(trackId: track.id) } }
+                        onToggleLike: { Task { _ = await api.toggleLike(trackId: track.id) } },
+                        onOpenArtist: { user in
+                            if user.id != activeUser.id {
+                                selectedArtist = user
+                            }
+                        }
                     )
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 16)
                 }
             }
         }
+    }
+
+    private func formatCompactCount(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            return String(format: "%.1fM", Double(count) / 1_000_000.0)
+        } else if count >= 1_000 {
+            return String(format: "%.1fK", Double(count) / 1_000.0)
+        }
+        return "\(count)"
+    }
+}
+
+/// Reusable "See all" track list view pushed from Artist Profile sections
+struct NativeTrackListDetailView: View {
+    let title: String
+    let tracks: [SCTrack]
+
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var api: SoundCloudAPI
+    @EnvironmentObject var player: AudioPlayerService
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Circle()
+                        .fill(Color.white.opacity(0.11))
+                        .frame(width: 34, height: 34)
+                        .overlay(Image(systemName: "chevron.left").font(.system(size: 15, weight: .bold)).foregroundColor(.white))
+                }
+                Text(title)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                Spacer()
+                Button {
+                    player.playShuffled(list: tracks)
+                } label: {
+                    Image(systemName: "shuffle")
+                        .foregroundColor(.white.opacity(0.9))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(red: 0.067, green: 0.067, blue: 0.067))
+
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(tracks) { track in
+                        SCTrackRowView(
+                            track: track,
+                            isCurrentlyPlaying: player.currentTrack?.id == track.id,
+                            isLiked: api.likedTrackIds.contains(track.id),
+                            onTapPlay: { player.play(track: track, in: tracks) },
+                            onToggleLike: { Task { _ = await api.toggleLike(trackId: track.id) } }
+                        )
+                        .padding(.horizontal, 16)
+                    }
+                    Spacer(minLength: 150)
+                }
+            }
+        }
+        .background(Color(red: 0.067, green: 0.067, blue: 0.067).ignoresSafeArea())
+        .navigationBarHidden(true)
     }
 }
 

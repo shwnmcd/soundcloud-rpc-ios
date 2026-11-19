@@ -49,6 +49,7 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var showingNowPlaying = false
     @State private var showingLoginSheet = false
+    @State private var presentedArtistFromPlayer: SCUser? = nil
     @State private var refreshTrigger = UUID()
 
     private var isIPad: Bool {
@@ -84,7 +85,14 @@ struct ContentView: View {
             }
         }
         .fullScreenCover(isPresented: $showingNowPlaying) {
-            NowPlayingSheetView(player: player, api: api, settings: settings)
+            NowPlayingSheetView(
+                player: player,
+                api: api,
+                settings: settings,
+                onOpenArtist: { artist in
+                    presentedArtistFromPlayer = artist
+                }
+            )
         }
         .task {
             api.authBridge = authBridge
@@ -177,15 +185,24 @@ struct ContentView: View {
     private var iPhoneShell: some View {
         ZStack(alignment: .bottom) {
             Group {
-                switch selectedTab {
-                case .home:
-                    NativeHomeView(onOpenSettings: { showingSettings = true })
-                case .feed:
-                    NativeFeedView()
-                case .search:
-                    NativeSearchView()
-                case .library:
-                    NativeLibraryView(onOpenSettings: { showingSettings = true })
+                if let artist = presentedArtistFromPlayer {
+                    NavigationStack {
+                        NativeArtistProfileView(user: artist) {
+                            presentedArtistFromPlayer = nil
+                        }
+                    }
+                    .id("artist-\(artist.id)")
+                } else {
+                    switch selectedTab {
+                    case .home:
+                        NativeHomeView(onOpenSettings: { showingSettings = true })
+                    case .feed:
+                        NativeFeedView()
+                    case .search:
+                        NativeSearchView()
+                    case .library:
+                        NativeLibraryView(onOpenSettings: { showingSettings = true })
+                    }
                 }
             }
             .id(refreshTrigger)
@@ -233,6 +250,7 @@ struct ContentView: View {
                 ForEach(AppTab.allCases, id: \.self) { tab in
                     Button {
                         haptic(.light)
+                        presentedArtistFromPlayer = nil
                         selectedTab = tab
                     } label: {
                         HStack(spacing: 12) {
@@ -275,15 +293,24 @@ struct ContentView: View {
 
             ZStack(alignment: .bottom) {
                 Group {
-                    switch selectedTab {
-                    case .home:
-                        NativeHomeView(onOpenSettings: { showingSettings = true })
-                    case .feed:
-                        NativeFeedView()
-                    case .search:
-                        NativeSearchView()
-                    case .library:
-                        NativeLibraryView(onOpenSettings: { showingSettings = true })
+                    if let artist = presentedArtistFromPlayer {
+                        NavigationStack {
+                            NativeArtistProfileView(user: artist) {
+                                presentedArtistFromPlayer = nil
+                            }
+                        }
+                        .id("artist-\(artist.id)")
+                    } else {
+                        switch selectedTab {
+                        case .home:
+                            NativeHomeView(onOpenSettings: { showingSettings = true })
+                        case .feed:
+                            NativeFeedView()
+                        case .search:
+                            NativeSearchView()
+                        case .library:
+                            NativeLibraryView(onOpenSettings: { showingSettings = true })
+                        }
                     }
                 }
                 .id(refreshTrigger)
@@ -310,6 +337,7 @@ struct ContentView: View {
                 let isSelected = selectedTab == tab
                 Button {
                     haptic(.light)
+                    presentedArtistFromPlayer = nil
                     selectedTab = tab
                 } label: {
                     VStack(spacing: 3.5) {
