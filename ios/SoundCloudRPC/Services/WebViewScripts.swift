@@ -386,7 +386,7 @@ enum WebViewScripts {
             font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif !important;
         }
 
-        /* Hide SoundCloud's desktop website chrome */
+        /* Hide SoundCloud's desktop website chrome & web-only clutter */
         header.header,
         .header,
         .announcements,
@@ -401,7 +401,30 @@ enum WebViewScripts {
         .search .l-sidebar-left,
         .tileGallery__sliderButton,
         .playableTile__actions,
-        .l-product-banners {
+        .l-product-banners,
+        .l-about-left,
+        .listenDetails__author,
+        .listenEngagement__commentForm,
+        .commentForm,
+        .commentFormDisabled,
+        .commentsList,
+        .suggestedTags,
+        .playlistTags,
+        .emptyTags,
+        .listenDetails__tags,
+        .listenDetails__description,
+        .listenDetails__partialInfo,
+        .soundBadgeList__more,
+        .l-listen-wrapper .l-sidebar-right,
+        .l-front .l-sidebar-right,
+        .stream .l-sidebar-right,
+        .search .l-sidebar-right,
+        .collection .l-sidebar-right,
+        [class*="suggestedTag"],
+        [class*="SuggestedTag"],
+        [class*="EmptyTag"],
+        [class*="cookie"],
+        #onetrust-consent-sdk {
             display: none !important;
         }
 
@@ -781,40 +804,267 @@ enum WebViewScripts {
             gap: 10px !important;
         }
 
-        /* === SLEEK TRACK / PLAYLIST DETAIL HERO === */
+        /* === OFFICIAL SOUNDCLOUD iOS PLAYLIST / TRACK DETAIL HERO (Zero Overlap, Zero Wasted Space!) === */
+        .l-listen-hero {
+            padding: 0 !important;
+            margin: 0 0 12px 0 !important;
+        }
         .fullListenHero,
         .fullHero {
+            position: relative !important;
             height: auto !important;
-            min-height: 220px !important;
-            padding: 18px 16px !important;
+            min-height: 0 !important;
+            padding: 16px 14px 14px 14px !important;
+            margin: 0 0 10px 0 !important;
             border-radius: 16px !important;
             overflow: hidden !important;
-            margin-bottom: 14px !important;
+            background: linear-gradient(180deg, rgba(160, 48, 0, 0.34) 0%, rgba(17, 17, 17, 0.98) 100%) !important;
+        }
+        .fullHero__background {
+            opacity: 0.25 !important;
+            filter: blur(28px) !important;
         }
         .fullHero__foreground {
             position: relative !important;
             display: flex !important;
             flex-direction: column !important;
-            gap: 14px !important;
+            align-items: center !important;
+            text-align: center !important;
+            gap: 10px !important;
             padding: 0 !important;
+            margin: 0 !important;
+            height: auto !important;
+        }
+        /* Neutralize ALL desktop absolute positioning inside fullHero so nothing overlaps! */
+        .fullHero__artwork,
+        .fullHero__title,
+        .fullHero__info,
+        .fullHero__playerArea,
+        .fullHero__waveform,
+        .fullHero__tracksCount {
+            position: static !important;
+            top: auto !important;
+            left: auto !important;
+            right: auto !important;
+            bottom: auto !important;
+            transform: none !important;
+            float: none !important;
+            margin: 0 !important;
         }
         .fullHero__artwork {
-            position: relative !important;
-            width: 185px !important;
-            height: 185px !important;
-            margin: 0 auto !important;
+            order: 1 !important;
+            width: 176px !important;
+            height: 176px !important;
             border-radius: 12px !important;
             overflow: hidden !important;
-            box-shadow: 0 10px 28px rgba(0,0,0,0.45) !important;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55) !important;
+            flex-shrink: 0 !important;
         }
-        .fullHero__title,
-        .fullHero__playerArea {
-            position: relative !important;
+        .fullHero__artwork .image,
+        .fullHero__artwork .image__full {
+            width: 176px !important;
+            height: 176px !important;
+            padding: 0 !important;
+            background-size: cover !important;
+            background-position: center !important;
+        }
+        .fullHero__title {
+            order: 2 !important;
             width: 100% !important;
-            left: 0 !important;
-            right: 0 !important;
-            bottom: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+        }
+        .fullHero__title .soundTitle__titleContainer {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            gap: 8px !important;
+        }
+        .fullHero__title .soundTitle__usernameTitleContainer {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            text-align: center !important;
+            gap: 3px !important;
+        }
+        .fullHero__title .soundTitle__title {
+            font-size: 20px !important;
+            font-weight: 700 !important;
+            text-align: center !important;
+            background: transparent !important;
+            padding: 0 !important;
+        }
+        .fullHero__title .soundTitle__username {
+            font-size: 13.5px !important;
+            opacity: 0.78 !important;
+            background: transparent !important;
+            padding: 0 !important;
+        }
+        .fullHero__title .soundTitle__playButton {
+            margin-top: 4px !important;
+        }
+        .fullHero__info {
+            order: 3 !important;
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            font-size: 12.5px !important;
+            opacity: 0.72 !important;
+        }
+        .fullHero__tracksCount {
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            gap: 6px !important;
+            width: auto !important;
+            height: auto !important;
+            padding: 4px 12px !important;
+            border-radius: 999px !important;
+            background: rgba(255,255,255,0.08) !important;
+        }
+        .genericTrackCount__number,
+        .genericTrackCount__label,
+        .genericTrackCount__duration {
+            font-size: 12px !important;
+            line-height: 1.2 !important;
+            display: inline !important;
+        }
+        .fullHero__playerArea {
+            order: 4 !important;
+            width: 100% !important;
+        }
+        /* Compact engagement bar (Share, Edit, Queue) */
+        .listenEngagement {
+            margin: 0 0 10px 0 !important;
+            padding: 0 !important;
+            border: none !important;
+        }
+        .listenEngagement__footer {
+            display: flex !important;
+            justify-content: center !important;
+            padding: 4px 0 8px 0 !important;
             margin: 0 !important;
+            border-bottom: 1px solid rgba(255,255,255,0.07) !important;
+        }
+        .listenEngagement__stats {
+            display: none !important;
+        }
+
+        /* === KILL THE 180px DESKTOP LEFT MARGIN ON PLAYLISTS & TRACKS === */
+        .l-about-rows,
+        .l-about-main,
+        .l-about-right,
+        .l-listen-wrapper .l-main,
+        .listenDetails,
+        .listenDetails__trackList,
+        .trackList {
+            display: block !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            float: none !important;
+            border: none !important;
+        }
+
+        /* === OFFICIAL SOUNDCLOUD iOS 52×52 PLAYLIST TRACKLIST ROWS === */
+        .trackList__list {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 2px !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .trackList__item {
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 7px 2px !important;
+            border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+            box-sizing: border-box !important;
+        }
+        .trackItem {
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            gap: 12px !important;
+            width: 100% !important;
+            height: auto !important;
+            padding: 2px 0 !important;
+            margin: 0 !important;
+        }
+        .trackItem__image {
+            position: relative !important;
+            flex: 0 0 52px !important;
+            width: 52px !important;
+            height: 52px !important;
+            min-width: 52px !important;
+            max-width: 52px !important;
+            border-radius: 8px !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.32) !important;
+        }
+        .trackItem__image .image,
+        .trackItem__image .image__full {
+            width: 52px !important;
+            height: 52px !important;
+            padding: 0 !important;
+            background-size: cover !important;
+            background-position: center !important;
+            border-radius: 8px !important;
+        }
+        .trackItem__number,
+        .trackItem__separator {
+            display: none !important;
+        }
+        /* Stack Track Title boldly ON TOP and Artist cleanly UNDERNEATH (exact SoundCloud iOS style!) */
+        .trackItem__content {
+            flex: 1 !important;
+            min-width: 0 !important;
+            display: flex !important;
+            flex-direction: column-reverse !important;
+            justify-content: center !important;
+            align-items: flex-start !important;
+            gap: 3px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            line-height: 1.25 !important;
+        }
+        .trackItem__trackTitle {
+            font-size: 15px !important;
+            font-weight: 600 !important;
+            color: var(--text-base, #ffffff) !important;
+            max-width: 100% !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+        .trackItem__username {
+            font-size: 13px !important;
+            opacity: 0.65 !important;
+            max-width: 100% !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+        .trackItem__additional {
+            flex-shrink: 0 !important;
+            margin-left: 8px !important;
+            font-size: 12px !important;
+            opacity: 0.65 !important;
+        }
+        .trackItem__actions {
+            position: static !important;
+            opacity: 1 !important;
+            background: transparent !important;
         }
 
         /* === MESHED FEED & SEARCH TRACK CARDS === */
@@ -932,13 +1182,6 @@ enum WebViewScripts {
         }
         .sc-button {
             border-radius: 999px !important;
-        }
-        .trackList__item {
-            display: flex !important;
-            align-items: center !important;
-            gap: 10px !important;
-            padding: 8px 6px !important;
-            border-bottom: 1px solid rgba(255,255,255,0.06) !important;
         }
         .searchList__empty {
             padding: 40px 16px !important;

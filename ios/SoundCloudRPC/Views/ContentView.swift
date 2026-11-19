@@ -399,12 +399,15 @@ struct ContentView: View {
                 if section == .likes {
                     // Official SoundCloud iOS "Your likes" Hero Header (Burnt-Orange Glow + Search + Shuffle & White Play!)
                     yourLikesHeader
+                } else if section == .playlists {
+                    // Official SoundCloud iOS "Playlists" Hero Header (Warm Orange Glow + Search Pill + Bold Title!)
+                    playlistsHeader
                 } else {
-                    // Official SoundCloud iOS "Albums / Playlists / etc." Header (Circular < Back · Centered Title · Search Pill!)
+                    // Official SoundCloud iOS "Albums / Following / Stations / History" Header
                     librarySectionHeader(section)
                 }
             } else if webController.isDetailPage {
-                // Sleek integrated circular < Back button on tracks/playlists/artists
+                // Sleek compact detail header with circular < Back button + Play/Shuffle for playlists
                 HStack(spacing: 12) {
                     Button {
                         haptic(.light)
@@ -426,16 +429,31 @@ struct ContentView: View {
 
                     Button {
                         haptic(.light)
-                        showingSettings = true
+                        webController.shuffleAndPlay()
                     } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 18, weight: .medium))
+                        Image(systemName: "shuffle")
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.primary.opacity(0.85))
                             .frame(width: 34, height: 34)
                     }
+
+                    Button {
+                        haptic(.medium)
+                        webController.playFirstTrack()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 32, height: 32)
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.black)
+                                .offset(x: 1)
+                        }
+                    }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
                 .background(appBg)
             } else {
                 rootTabHeader
@@ -538,7 +556,73 @@ struct ContentView: View {
         )
     }
 
-    /// Official SoundCloud iOS Library Sub-Page Header (Albums, Playlists, etc. — Circular < Back · Centered Title · Search Pill)
+    /// Official SoundCloud iOS "Playlists" header with burnt-orange glow & search pill
+    private var playlistsHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                if !isIPadLayout {
+                    Button {
+                        haptic(.light)
+                        activeLibrarySection = nil
+                        libraryFilterText = ""
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Color.black.opacity(0.45))
+                            .clipShape(Circle())
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.65))
+                    TextField(
+                        "",
+                        text: $libraryFilterText,
+                        prompt: Text("Search playlists").foregroundColor(.white.opacity(0.55))
+                    )
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                    .onChange(of: libraryFilterText) { query in
+                        webController.filterVisibleList(query: query)
+                    }
+                    if !libraryFilterText.isEmpty {
+                        Button {
+                            libraryFilterText = ""
+                            webController.filterVisibleList(query: "")
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.55))
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.42))
+                .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                .clipShape(Capsule())
+            }
+
+            Text("Playlists")
+                .font(.title.weight(.bold))
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 12)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.44, green: 0.14, blue: 0.0), appBg],
+                startPoint: .topTrailing,
+                endPoint: .bottom
+            )
+        )
+    }
+
+    /// Official SoundCloud iOS Library Sub-Page Header (Albums, Following, Stations, etc.)
     private func librarySectionHeader(_ section: LibrarySection) -> some View {
         VStack(spacing: 12) {
             ZStack {
