@@ -13,16 +13,20 @@ enum LibrarySection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var urlString: String {
+    var pathString: String {
         switch self {
-        case .likes: return "https://soundcloud.com/you/likes"
-        case .playlists: return "https://soundcloud.com/you/sets"
-        case .albums: return "https://soundcloud.com/you/albums"
-        case .following: return "https://soundcloud.com/you/following"
-        case .stations: return "https://soundcloud.com/you/stations"
-        case .history: return "https://soundcloud.com/you/history"
-        case .uploads: return "https://soundcloud.com/you/tracks"
+        case .likes: return "/you/likes"
+        case .playlists: return "/you/sets"
+        case .albums: return "/you/albums"
+        case .following: return "/you/following"
+        case .stations: return "/you/stations"
+        case .history: return "/you/history"
+        case .uploads: return "/you/tracks"
         }
+    }
+
+    var urlString: String {
+        "https://soundcloud.com\(pathString)"
     }
 
     var searchPlaceholder: String {
@@ -103,21 +107,37 @@ final class WebViewController: ObservableObject {
         return "SoundCloud"
     }
 
-    func goBack() { webView?.goBack() }
+    /// Navigate inside SoundCloud's Single-Page App without reloading the page or restarting music!
+    func navigateSPA(path: String) {
+        let onSoundCloud = currentURL?.host?.contains("soundcloud.com") == true
+        if onSoundCloud, webView != nil {
+            webView?.evaluateJavaScript(WebViewScripts.navigateSPAJS(path: path), completionHandler: nil)
+        } else {
+            load(urlString: "https://soundcloud.com\(path)")
+        }
+    }
+
+    func goBack() {
+        if currentURL?.host?.contains("soundcloud.com") == true {
+            webView?.evaluateJavaScript(WebViewScripts.spaGoBackJS, completionHandler: nil)
+        } else {
+            webView?.goBack()
+        }
+    }
     func goForward() { webView?.goForward() }
     func reload() { webView?.reload() }
 
-    func loadHome() { load(urlString: "https://soundcloud.com/discover") }
-    func loadFeed() { load(urlString: "https://soundcloud.com/feed") }
-    func loadLibrary(section: LibrarySection) { load(urlString: section.urlString) }
+    func loadHome() { navigateSPA(path: "/discover") }
+    func loadFeed() { navigateSPA(path: "/feed") }
+    func loadLibrary(section: LibrarySection) { navigateSPA(path: section.pathString) }
 
     func loadSearch(query: String = "", filter: SearchFilter = .all) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = "https://soundcloud.com/search\(filter.pathSuffix)"
+        let base = "/search\(filter.pathSuffix)"
         if trimmed.isEmpty {
-            load(urlString: base)
+            navigateSPA(path: base)
         } else if let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-            load(urlString: "\(base)?q=\(encoded)")
+            navigateSPA(path: "\(base)?q=\(encoded)")
         }
     }
 
@@ -213,6 +233,7 @@ struct SoundCloudWebView: UIViewRepresentable {
         ucc.add(weakHandler, name: "trackUpdate")
         ucc.add(weakHandler, name: "adBlocked")
         ucc.add(weakHandler, name: "nativeNav")
+        ucc.add(weakHandler, name: "routeChange")
 
         // Always capture SoundCloud's detached HTMLAudioElement at document-start for reliable scrubbing
         let captureScript = WKUserScript(
@@ -386,6 +407,30 @@ struct SoundCloudWebView: UIViewRepresentable {
             if message.name == "adBlocked" {
                 Task { @MainActor in
                     self.parent.adBlocker.recordBlockedAd()
+                }
+                return
+            }
+
+            if message.name == "routeChange",
+               let dict = message.body as? [String: Any],
+               let urlStr = dict["url"] as? String,
+               let parsedURL = URL(string: urlStr) {
+                let historyCanGoBack = dict["canGoBack"] as? Bool ?? false
+                Task { @MainActor in
+                    self.parent.controller.currentURL = parsedURL
+                    if historyCanGoBack {
+                        self.parent.controller.canGoBack = true
+                    }
+                    // Ensure mobile layout CSS stays applied after SPA route transitions
+                    let css = self.parent.themePluginManager.activeThemeCSS(
+                        selectedName: self.parent.settings.selectedCustomTheme
+                    )
+                    self.parent.controller.applyThemeAndCosmetics(
+                        isDark: self.parent.settings.darkMode,
+                        mobileAppLayout: self.parent.settings.mobileAppLayout,
+                        customCSS: css,
+                        adBlockerEnabled: self.parent.settings.adBlockerEnabled
+                    )
                 }
                 return
             }

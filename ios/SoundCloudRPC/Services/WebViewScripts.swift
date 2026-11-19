@@ -21,7 +21,23 @@ enum WebViewScripts {
       window.__soundCloudMonitorActive = true;
 
       let lastSig = '';
+      let lastHref = '';
       let elapsedObserver = null;
+
+      function notifyRouteIfChanged() {
+        const href = window.location.href;
+        if (href !== lastHref) {
+          lastHref = href;
+          try {
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.routeChange) {
+              window.webkit.messageHandlers.routeChange.postMessage({
+                url: href,
+                canGoBack: window.history.length > 1
+              });
+            }
+          } catch (e) {}
+        }
+      }
 
       function extractBgUrl(el) {
         if (!el) return '';
@@ -203,17 +219,24 @@ enum WebViewScripts {
       setInterval(() => {
         attachObservers();
         syncMediaSessionHandlers();
+        notifyRouteIfChanged();
         notifyPlaybackStateChange(false);
-      }, 800);
+      }, 500);
+
+      window.addEventListener('popstate', () => {
+        notifyRouteIfChanged();
+      });
 
       if (document.readyState === 'complete' || document.readyState === 'interactive') {
         attachObservers();
         syncMediaSessionHandlers();
+        notifyRouteIfChanged();
         notifyPlaybackStateChange(true);
       } else {
         document.addEventListener('DOMContentLoaded', () => {
           attachObservers();
           syncMediaSessionHandlers();
+          notifyRouteIfChanged();
           notifyPlaybackStateChange(true);
         });
       }
@@ -415,6 +438,12 @@ enum WebViewScripts {
         .listenDetails__description,
         .listenDetails__partialInfo,
         .soundBadgeList__more,
+        .imageChooser,
+        .imageChooser__chooseButton,
+        .fullHero__title .soundTitle__playButton,
+        .fullHero__info .soundTitle__uploadTime,
+        .fullHero__info .soundTitle__tagContainer,
+        .fullHero__info .sc-ministats-group,
         .l-listen-wrapper .l-sidebar-right,
         .l-front .l-sidebar-right,
         .stream .l-sidebar-right,
@@ -688,14 +717,14 @@ enum WebViewScripts {
             overflow: hidden !important;
         }
 
-        /* === OFFICIAL SOUNDCLOUD iOS COMPACT 56×56 HORIZONTAL LIST ROWS FOR LIKES, ALBUMS, PLAYLISTS, HISTORY === */
+        /* === OFFICIAL SOUNDCLOUD iOS COMPACT 54×54 BORDERLESS LIST ROWS (Exact SC iOS Spacing!) === */
         .badgeList,
         .userLikes .lazyLoadingList__list,
         .collectionSection .lazyLoadingList__list,
         .userNetwork .lazyLoadingList__list {
             display: flex !important;
             flex-direction: column !important;
-            gap: 2px !important;
+            gap: 4px !important;
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
@@ -707,12 +736,9 @@ enum WebViewScripts {
             height: auto !important;
             float: none !important;
             margin: 0 !important;
-            padding: 8px 2px !important;
-            border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+            padding: 6px 2px !important;
+            border: none !important;
             box-sizing: border-box !important;
-        }
-        html.theme-light .badgeList__item {
-            border-bottom-color: rgba(0,0,0,0.06) !important;
         }
         .badgeList__item .playableTile {
             width: 100% !important;
@@ -720,28 +746,27 @@ enum WebViewScripts {
             display: flex !important;
             flex-direction: row !important;
             align-items: center !important;
-            gap: 13px !important;
+            gap: 12px !important;
         }
         .badgeList__item .playableTile__artwork {
             position: relative !important;
-            flex: 0 0 56px !important;
-            width: 56px !important;
-            height: 56px !important;
-            min-width: 56px !important;
-            max-width: 56px !important;
+            flex: 0 0 54px !important;
+            width: 54px !important;
+            height: 54px !important;
+            min-width: 54px !important;
+            max-width: 54px !important;
             padding: 0 !important;
             margin: 0 !important;
-            border-radius: 8px !important;
+            border-radius: 6px !important;
             overflow: hidden !important;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.3) !important;
         }
         .badgeList__item .playableTile__artworkLink,
         .badgeList__item .playableTile__artwork .image,
         .badgeList__item .playableTile__artwork .image__full {
             position: absolute !important;
             inset: 0 !important;
-            width: 56px !important;
-            height: 56px !important;
+            width: 54px !important;
+            height: 54px !important;
             padding: 0 !important;
             margin: 0 !important;
             background-size: cover !important;
@@ -755,10 +780,10 @@ enum WebViewScripts {
             justify-content: center !important;
         }
         .badgeList__item .playableTile__playButton .sc-button-play {
-            width: 30px !important;
-            height: 30px !important;
+            width: 28px !important;
+            height: 28px !important;
             border-radius: 50% !important;
-            transform: scale(0.82) !important;
+            transform: scale(0.8) !important;
         }
         .badgeList__item .playableTile__description {
             flex: 1 !important;
@@ -770,7 +795,7 @@ enum WebViewScripts {
             display: flex !important;
             flex-direction: column !important;
             justify-content: center !important;
-            gap: 3px !important;
+            gap: 2px !important;
         }
         .badgeList__item .playableTile__heading {
             font-size: 15px !important;
@@ -781,8 +806,8 @@ enum WebViewScripts {
             text-overflow: ellipsis !important;
         }
         .badgeList__item .playableTile__usernameHeading {
-            font-size: 13px !important;
-            opacity: 0.65 !important;
+            font-size: 13.5px !important;
+            opacity: 0.62 !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
@@ -791,7 +816,7 @@ enum WebViewScripts {
         .lazyLoadingList__loading,
         .paging-eof {
             width: 100% !important;
-            margin: 18px auto !important;
+            margin: 16px auto !important;
         }
 
         /* Keep vertical track lists & search results single-column */
@@ -801,28 +826,28 @@ enum WebViewScripts {
         .trackList__list {
             display: flex !important;
             flex-direction: column !important;
-            gap: 10px !important;
+            gap: 6px !important;
         }
 
-        /* === OFFICIAL SOUNDCLOUD iOS PLAYLIST / TRACK DETAIL HERO (Zero Overlap, Zero Wasted Space!) === */
+        /* === OFFICIAL SOUNDCLOUD iOS PLAYLIST / TRACK DETAIL HERO (Exact Centered Art, Zero Shifted Box, Zero Giant Circle!) === */
         .l-listen-hero {
             padding: 0 !important;
-            margin: 0 0 12px 0 !important;
+            margin: 0 0 8px 0 !important;
         }
         .fullListenHero,
         .fullHero {
             position: relative !important;
             height: auto !important;
             min-height: 0 !important;
-            padding: 16px 14px 14px 14px !important;
-            margin: 0 0 10px 0 !important;
+            padding: 12px 12px 10px 12px !important;
+            margin: 0 0 4px 0 !important;
             border-radius: 16px !important;
             overflow: hidden !important;
-            background: linear-gradient(180deg, rgba(160, 48, 0, 0.34) 0%, rgba(17, 17, 17, 0.98) 100%) !important;
+            background: linear-gradient(180deg, rgba(145, 42, 0, 0.28) 0%, #111111 100%) !important;
         }
         .fullHero__background {
-            opacity: 0.25 !important;
-            filter: blur(28px) !important;
+            opacity: 0.22 !important;
+            filter: blur(36px) !important;
         }
         .fullHero__foreground {
             position: relative !important;
@@ -830,18 +855,20 @@ enum WebViewScripts {
             flex-direction: column !important;
             align-items: center !important;
             text-align: center !important;
-            gap: 10px !important;
+            gap: 8px !important;
             padding: 0 !important;
             margin: 0 !important;
             height: auto !important;
         }
-        /* Neutralize ALL desktop absolute positioning inside fullHero so nothing overlaps! */
+        /* Neutralize ALL desktop absolute offsets inside fullHero */
         .fullHero__artwork,
+        .fullHero__artwork *,
         .fullHero__title,
         .fullHero__info,
         .fullHero__playerArea,
         .fullHero__waveform,
-        .fullHero__tracksCount {
+        .fullHero__tracksCount,
+        .genericTrackCount {
             position: static !important;
             top: auto !important;
             left: auto !important;
@@ -849,96 +876,128 @@ enum WebViewScripts {
             bottom: auto !important;
             transform: none !important;
             float: none !important;
-            margin: 0 !important;
         }
+        /* Perfectly centered 176×176 artwork — fixes the half-shifted brown box completely! */
         .fullHero__artwork {
             order: 1 !important;
             width: 176px !important;
             height: 176px !important;
-            border-radius: 12px !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            border-radius: 10px !important;
             overflow: hidden !important;
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55) !important;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55) !important;
             flex-shrink: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
         }
+        .fullHero__artwork .listenArtworkWrapper,
+        .fullHero__artwork .listenArtworkWrapper__artwork,
         .fullHero__artwork .image,
-        .fullHero__artwork .image__full {
+        .fullHero__artwork .image__full,
+        .fullHero__artwork span.sc-artwork {
             width: 176px !important;
             height: 176px !important;
+            min-width: 176px !important;
+            max-width: 176px !important;
+            min-height: 176px !important;
+            max-height: 176px !important;
+            margin: 0 !important;
             padding: 0 !important;
+            display: block !important;
             background-size: cover !important;
             background-position: center !important;
+            border-radius: 10px !important;
         }
         .fullHero__title {
             order: 2 !important;
             width: 100% !important;
+            margin: 4px 0 0 0 !important;
             display: flex !important;
             flex-direction: column !important;
             align-items: center !important;
         }
-        .fullHero__title .soundTitle__titleContainer {
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            gap: 8px !important;
-        }
+        .fullHero__title .soundTitle__titleContainer,
         .fullHero__title .soundTitle__usernameTitleContainer {
             display: flex !important;
             flex-direction: column !important;
             align-items: center !important;
             text-align: center !important;
             gap: 3px !important;
+            margin: 0 !important;
         }
-        .fullHero__title .soundTitle__title {
+        .fullHero__title .soundTitle__title,
+        .fullHero__title .soundTitle__title span {
             font-size: 20px !important;
             font-weight: 700 !important;
             text-align: center !important;
             background: transparent !important;
             padding: 0 !important;
+            line-height: 1.25 !important;
         }
-        .fullHero__title .soundTitle__username {
+        .fullHero__title .soundTitle__username,
+        .fullHero__title .soundTitle__username a {
             font-size: 13.5px !important;
-            opacity: 0.78 !important;
+            font-weight: 500 !important;
+            opacity: 0.72 !important;
             background: transparent !important;
             padding: 0 !important;
         }
-        .fullHero__title .soundTitle__playButton {
-            margin-top: 4px !important;
-        }
+        /* Replace SoundCloud's giant 120px black circle "138 TRACKS" with a sleek 1-line subtitle! */
         .fullHero__info {
             order: 3 !important;
             display: flex !important;
             flex-direction: row !important;
             align-items: center !important;
             justify-content: center !important;
-            gap: 8px !important;
-            font-size: 12.5px !important;
-            opacity: 0.72 !important;
+            gap: 6px !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
-        .fullHero__tracksCount {
-            display: flex !important;
+        .fullHero__tracksCount,
+        .genericTrackCount {
+            display: inline-flex !important;
             flex-direction: row !important;
             align-items: center !important;
-            gap: 6px !important;
+            justify-content: center !important;
+            gap: 5px !important;
             width: auto !important;
             height: auto !important;
-            padding: 4px 12px !important;
-            border-radius: 999px !important;
-            background: rgba(255,255,255,0.08) !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border-radius: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            color: rgba(255, 255, 255, 0.62) !important;
         }
         .genericTrackCount__number,
         .genericTrackCount__label,
         .genericTrackCount__duration {
-            font-size: 12px !important;
+            font-size: 12.5px !important;
+            font-weight: 500 !important;
             line-height: 1.2 !important;
+            text-transform: lowercase !important;
             display: inline !important;
+            margin: 0 !important;
+            color: rgba(255, 255, 255, 0.62) !important;
+        }
+        .genericTrackCount__duration::before {
+            content: "· " !important;
         }
         .fullHero__playerArea {
             order: 4 !important;
             width: 100% !important;
         }
-        /* Compact engagement bar (Share, Edit, Queue) */
+        /* Hide bulky waveform on multi-track playlists (official SC iOS shows tracks immediately!) */
+        .fullListenHero:has(.genericTrackCount) .fullHero__playerArea {
+            display: none !important;
+        }
+        /* Compact single-row engagement buttons with zero excess whitespace */
         .listenEngagement {
-            margin: 0 0 10px 0 !important;
+            margin: 0 0 8px 0 !important;
             padding: 0 !important;
             border: none !important;
         }
@@ -947,7 +1006,7 @@ enum WebViewScripts {
             justify-content: center !important;
             padding: 4px 0 8px 0 !important;
             margin: 0 !important;
-            border-bottom: 1px solid rgba(255,255,255,0.07) !important;
+            border: none !important;
         }
         .listenEngagement__stats {
             display: none !important;
@@ -973,11 +1032,11 @@ enum WebViewScripts {
             border: none !important;
         }
 
-        /* === OFFICIAL SOUNDCLOUD iOS 52×52 PLAYLIST TRACKLIST ROWS === */
+        /* === OFFICIAL SOUNDCLOUD iOS 54×54 BORDERLESS PLAYLIST TRACKLIST ROWS === */
         .trackList__list {
             display: flex !important;
             flex-direction: column !important;
-            gap: 2px !important;
+            gap: 4px !important;
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
@@ -985,8 +1044,8 @@ enum WebViewScripts {
         .trackList__item {
             width: 100% !important;
             margin: 0 !important;
-            padding: 7px 2px !important;
-            border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+            padding: 6px 2px !important;
+            border: none !important;
             box-sizing: border-box !important;
         }
         .trackItem {
@@ -996,35 +1055,33 @@ enum WebViewScripts {
             gap: 12px !important;
             width: 100% !important;
             height: auto !important;
-            padding: 2px 0 !important;
+            padding: 0 !important;
             margin: 0 !important;
         }
         .trackItem__image {
             position: relative !important;
-            flex: 0 0 52px !important;
-            width: 52px !important;
-            height: 52px !important;
-            min-width: 52px !important;
-            max-width: 52px !important;
-            border-radius: 8px !important;
+            flex: 0 0 54px !important;
+            width: 54px !important;
+            height: 54px !important;
+            min-width: 54px !important;
+            max-width: 54px !important;
+            border-radius: 6px !important;
             overflow: hidden !important;
             margin: 0 !important;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.32) !important;
         }
         .trackItem__image .image,
         .trackItem__image .image__full {
-            width: 52px !important;
-            height: 52px !important;
+            width: 54px !important;
+            height: 54px !important;
             padding: 0 !important;
             background-size: cover !important;
             background-position: center !important;
-            border-radius: 8px !important;
+            border-radius: 6px !important;
         }
         .trackItem__number,
         .trackItem__separator {
             display: none !important;
         }
-        /* Stack Track Title boldly ON TOP and Artist cleanly UNDERNEATH (exact SoundCloud iOS style!) */
         .trackItem__content {
             flex: 1 !important;
             min-width: 0 !important;
@@ -1032,7 +1089,7 @@ enum WebViewScripts {
             flex-direction: column-reverse !important;
             justify-content: center !important;
             align-items: flex-start !important;
-            gap: 3px !important;
+            gap: 2px !important;
             margin: 0 !important;
             padding: 0 !important;
             overflow: hidden !important;
@@ -1048,8 +1105,8 @@ enum WebViewScripts {
             text-overflow: ellipsis !important;
         }
         .trackItem__username {
-            font-size: 13px !important;
-            opacity: 0.65 !important;
+            font-size: 13.5px !important;
+            opacity: 0.62 !important;
             max-width: 100% !important;
             white-space: nowrap !important;
             overflow: hidden !important;
@@ -1059,7 +1116,7 @@ enum WebViewScripts {
             flex-shrink: 0 !important;
             margin-left: 8px !important;
             font-size: 12px !important;
-            opacity: 0.65 !important;
+            opacity: 0.6 !important;
         }
         .trackItem__actions {
             position: static !important;
@@ -1311,6 +1368,46 @@ enum WebViewScripts {
         })();
         """
     }
+
+    /// Seamless Single-Page-App navigation inside soundcloud.com so music NEVER stops or restarts when switching tabs!
+    static func navigateSPAJS(path: String) -> String {
+        let escaped = jsTemplateEscape(path)
+        return """
+        (function(){
+          const target = `\(escaped)`;
+          if (!window.location.hostname.includes('soundcloud.com')) {
+            window.location.href = 'https://soundcloud.com' + target;
+            return;
+          }
+          if (window.location.pathname + window.location.search === target) {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+          }
+          // Prefer clicking an existing SoundCloud SPA router anchor if present
+          const existing = document.querySelector('a[href="' + target + '"], a[href="https://soundcloud.com' + target + '"]');
+          if (existing) {
+            existing.click();
+            return;
+          }
+          // Otherwise synthesize a click on a relative <a> inside #app so SoundCloud's delegated SPA router intercepts it without reloading the page!
+          const a = document.createElement('a');
+          a.href = target;
+          a.style.display = 'none';
+          const root = document.querySelector('#app') || document.body;
+          root.appendChild(a);
+          a.click();
+          setTimeout(() => { try { a.remove(); } catch (e) {} }, 60);
+        })();
+        """
+    }
+
+    static let spaGoBackJS = """
+    (function(){
+      if (window.history.length > 1) {
+        window.history.back();
+      }
+    })();
+    """
 
     static let togglePlayPauseJS = """
     (function(){
