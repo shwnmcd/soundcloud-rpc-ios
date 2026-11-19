@@ -2,5 +2,10 @@
 ios/build/
 ios/dist/
 ios/*.xcodeproj/
+android/.gradle/
+android/build/
+android/app/build/
+android/dist/
 *.ipa
+*.apk
 *.zip

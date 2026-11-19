@@ -1,0 +1,366 @@
+package com.soundcloudrpc.android
+
+import android.app.Application
+import android.content.ComponentName
+import android.net.Uri
+import android.webkit.CookieManager
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.soundcloudrpc.android.data.AppPrefs
+import com.soundcloudrpc.android.data.IntegrationsService
+import com.soundcloudrpc.android.data.SoundCloudApi
+import com.soundcloudrpc.android.model.*
+import com.soundcloudrpc.android.player.PlaybackService
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+enum class RepeatMode { NONE, ALL, ONE }
+
+class AppViewModel(application: Application) : AndroidViewModel(application) {
+    val prefs = AppPrefs(application)
+    val api = SoundCloudApi(prefs)
+    val integrations = IntegrationsService(prefs)
+
+    private var mediaController: MediaController? = null
+
+    private val _isLoggedIn = MutableStateFlow(prefs.oauthToken.isNotBlank() && prefs.clientId.isNotBlank())
+    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+    private val _currentUser = MutableStateFlow<SCUser?>(null)
+    val currentUser: StateFlow<SCUser?> = _currentUser.asStateFlow()
+
+    private val _likedIds = MutableStateFlow<Set<Long>>(emptySet())
+    val likedIds: StateFlow<Set<Long>> = _likedIds.asStateFlow()
+
+    // Home, Feed, Library state
+    private val _homeShelves = MutableStateFlow<List<SCHomeShelf>>(emptyList())
+    val homeShelves: StateFlow<List<SCHomeShelf>> = _homeShelves.asStateFlow()
+
+    private val _quickCards = MutableStateFlow<List<SCQuickCard>>(emptyList())
+    val quickCards: StateFlow<List<SCQuickCard>> = _quickCards.asStateFlow()
+
+    private val _likes = MutableStateFlow<List<SCTrack>>(emptyList())
+    val likes: StateFlow<List<SCTrack>> = _likes.asStateFlow()
+
+    private val _playlists = MutableStateFlow<List<SCPlaylist>>(emptyList())
+    val playlists: StateFlow<List<SCPlaylist>> = _playlists.asStateFlow()
+
+    private val _albums = MutableStateFlow<List<SCPlaylist>>(emptyList())
+    val albums: StateFlow<List<SCPlaylist>> = _albums.asStateFlow()
+
+    private val _history = MutableStateFlow<List<SCTrack>>(emptyList())
+    val history: StateFlow<List<SCTrack>> = _history.asStateFlow()
+
+    private val _following = MutableStateFlow<List<SCUser>>(emptyList())
+    val following: StateFlow<List<SCUser>> = _following.asStateFlow()
+
+    private val _feed = MutableStateFlow<List<SCFeedItem>>(emptyList())
+    val feed: StateFlow<List<SCFeedItem>> = _feed.asStateFlow()
+
+    private val _isLoadingHome = MutableStateFlow(false)
+    val isLoadingHome: StateFlow<Boolean> = _isLoadingHome.asStateFlow()
+
+    // Player state
+    private val _currentTrack = MutableStateFlow<SCTrack?>(null)
+    val currentTrack: StateFlow<SCTrack?> = _currentTrack.asStateFlow()
+
+    private val _queue = MutableStateFlow<List<SCTrack>>(emptyList())
+    val queue: StateFlow<List<SCTrack>> = _queue.asStateFlow()
+
+    private val _currentIndex = MutableStateFlow(0)
+    val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
+
+    private val _isPlaying = MutableStateFlow(false)
+    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
+    private val _isBuffering = MutableStateFlow(false)
+    val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+
+    private val _elapsedSec = MutableStateFlow(0L)
+    val elapsedSec: StateFlow<Long> = _elapsedSec.asStateFlow()
+
+    private val _durationSec = MutableStateFlow(0L)
+    val durationSec: StateFlow<Long> = _durationSec.asStateFlow()
+
+    private val _isShuffling = MutableStateFlow(false)
+    val isShuffling: StateFlow<Boolean> = _isShuffling.asStateFlow()
+
+    private val _repeatMode = MutableStateFlow(RepeatMode.NONE)
+    val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
+
+    private var originalQueue: List<SCTrack> = emptyList()
+
+    init {
+        connectMediaController()
+        startProgressTicker()
+        if (_isLoggedIn.value) {
+            refreshAll()
+        }
+    }
+
+    private fun connectMediaController() {
+        val ctx = getApplication<Application>()
+        val token = SessionToken(ctx, ComponentName(ctx, PlaybackService::class.java))
+        val future = MediaController.Builder(ctx, token).buildAsync()
+        future.addListener({
+            runCatching {
+                val controller = future.get()
+                mediaController = controller
+                controller.addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        _isPlaying.value = playing
+                    }
+
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        _isBuffering.value = playbackState == Player.STATE_BUFFERING
+                        if (playbackState == Player.STATE_ENDED) {
+                            handleTrackEnded()
+                        }
+                    }
+                })
+            }
+        }, ContextCompat.getMainExecutor(ctx))
+    }
+
+    private fun startProgressTicker() {
+        viewModelScope.launch {
+            var tick = 0
+            while (true) {
+                delay(400)
+                val mc = mediaController
+                val track = _currentTrack.value
+                if (mc != null && track != null) {
+                    val pos = (mc.currentPosition.coerceAtLeast(0L)) / 1000L
+                    val dur = if (mc.duration > 0) mc.duration / 1000L else track.durationSec
+                    _elapsedSec.value = pos
+                    if (dur > 0) _durationSec.value = dur
+                    tick++
+                    if (tick % 6 == 0) {
+                        integrations.onPlaybackProgress(track, pos, dur, _isPlaying.value)
+                    }
+                }
+            }
+        }
+    }
+
+    fun onSignedIn(token: String, clientId: String) {
+        if (token.isNotBlank()) prefs.oauthToken = token
+        if (clientId.isNotBlank()) prefs.clientId = clientId
+        _isLoggedIn.value = prefs.oauthToken.isNotBlank() && prefs.clientId.isNotBlank()
+        if (_isLoggedIn.value) {
+            refreshAll()
+        }
+    }
+
+    fun signOut() {
+        prefs.oauthToken = ""
+        CookieManager.getInstance().removeAllCookies(null)
+        CookieManager.getInstance().flush()
+        mediaController?.stop()
+        _currentUser.value = null
+        _currentTrack.value = null
+        _isLoggedIn.value = false
+    }
+
+    fun refreshAll() {
+        viewModelScope.launch {
+            _isLoadingHome.value = true
+            val me = api.fetchMe()
+            _currentUser.value = me
+            val shelves = api.fetchHomeSelections()
+            _homeShelves.value = shelves
+
+            val (pls, albs) = api.fetchLibraryPlaylistsAndAlbums()
+            _playlists.value = pls
+            _albums.value = albs
+
+            val hist = api.fetchHistory()
+            _history.value = hist
+
+            val (feedItems, _) = api.fetchFeed()
+            _feed.value = feedItems
+
+            if (me != null) {
+                val (likedTracks, _) = api.fetchLikes(me.id, limit = 60)
+                _likes.value = likedTracks
+                _likedIds.value = likedTracks.map { it.id }.toSet()
+
+                val fol = api.fetchFollowing(me.id)
+                _following.value = fol
+
+                val cards = mutableListOf<SCQuickCard>()
+                pls.firstOrNull()?.let {
+                    cards.add(SCQuickCard("pl-${it.id}", it.displayTitle, it.creatorName, it.rawArtwork, false, playlist = it))
+                }
+                fol.firstOrNull()?.let {
+                    cards.add(SCQuickCard("u-${it.id}", it.displayName, "Artist", it.avatarUrl, true, user = it))
+                }
+                pls.drop(1).take(4 - cards.size).forEach {
+                    cards.add(SCQuickCard("pl-${it.id}", it.displayTitle, it.creatorName, it.rawArtwork, false, playlist = it))
+                }
+                _quickCards.value = cards.take(4)
+            }
+            _isLoadingHome.value = false
+        }
+    }
+
+    fun playTrack(track: SCTrack, list: List<SCTrack> = listOf(track), shuffle: Boolean = false) {
+        val source = if (list.isNotEmpty()) list else listOf(track)
+        originalQueue = source
+        if (shuffle) {
+            _isShuffling.value = true
+            val rest = source.filter { it.id != track.id }.shuffled()
+            _queue.value = listOf(track) + rest
+            _currentIndex.value = 0
+        } else {
+            _isShuffling.value = false
+            _queue.value = source
+            _currentIndex.value = source.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+        }
+        viewModelScope.launch { loadAndPlay(_currentIndex.value) }
+    }
+
+    fun playShuffled(list: List<SCTrack>) {
+        if (list.isEmpty()) return
+        originalQueue = list
+        _isShuffling.value = true
+        _queue.value = list.shuffled()
+        _currentIndex.value = 0
+        viewModelScope.launch { loadAndPlay(0) }
+    }
+
+    private suspend fun loadAndPlay(index: Int) {
+        val list = _queue.value
+        if (index !in list.indices) return
+        val track = list[index]
+        _currentIndex.value = index
+        _currentTrack.value = track
+        _elapsedSec.value = 0L
+        _durationSec.value = track.durationSec.coerceAtLeast(1L)
+        _isBuffering.value = true
+
+        val streamUrl = api.resolveStreamUrl(track)
+        if (streamUrl == null) {
+            _isBuffering.value = false
+            if (index + 1 < list.size) loadAndPlay(index + 1)
+            return
+        }
+
+        val (artist, title) = TrackParser.normalize(track.displayTitle, track.artistName, prefs.trackParserEnabled)
+        val meta = MediaMetadata.Builder()
+            .setTitle(title)
+            .setArtist(artist)
+            .setArtworkUri(Uri.parse(SCArtworkUrl.hd(track.rawArtwork)))
+            .build()
+
+        val mediaItem = MediaItem.Builder()
+            .setUri(streamUrl)
+            .setMediaMetadata(meta)
+            .build()
+
+        mediaController?.let { mc ->
+            mc.setMediaItem(mediaItem)
+            mc.prepare()
+            mc.play()
+        }
+        _isBuffering.value = false
+        integrations.onPlaybackProgress(track, 0L, track.durationSec, true)
+    }
+
+    fun togglePlayPause() {
+        val mc = mediaController ?: return
+        if (mc.isPlaying) mc.pause() else mc.play()
+    }
+
+    fun nextTrack() {
+        val list = _queue.value
+        if (list.isEmpty()) return
+        val next = _currentIndex.value + 1
+        if (next < list.size) {
+            viewModelScope.launch { loadAndPlay(next) }
+        } else if (_repeatMode.value == RepeatMode.ALL) {
+            viewModelScope.launch { loadAndPlay(0) }
+        }
+    }
+
+    fun previousTrack() {
+        val list = _queue.value
+        if (list.isEmpty()) return
+        if (_elapsedSec.value > 3L) {
+            seekToFraction(0f)
+            return
+        }
+        val prev = _currentIndex.value - 1
+        if (prev >= 0) {
+            viewModelScope.launch { loadAndPlay(prev) }
+        } else if (_repeatMode.value == RepeatMode.ALL) {
+            viewModelScope.launch { loadAndPlay(list.lastIndex) }
+        } else {
+            seekToFraction(0f)
+        }
+    }
+
+    fun seekToFraction(fraction: Float) {
+        val clamped = fraction.coerceIn(0f, 1f)
+        val durMs = (_durationSec.value * 1000L).coerceAtLeast(1000L)
+        val targetMs = (durMs * clamped).toLong()
+        _elapsedSec.value = targetMs / 1000L
+        mediaController?.seekTo(targetMs)
+    }
+
+    fun toggleShuffle() {
+        val newVal = !_isShuffling.value
+        _isShuffling.value = newVal
+        val cur = _currentTrack.value ?: return
+        if (newVal) {
+            val rest = originalQueue.filter { it.id != cur.id }.shuffled()
+            _queue.value = listOf(cur) + rest
+            _currentIndex.value = 0
+        } else {
+            _queue.value = originalQueue
+            _currentIndex.value = originalQueue.indexOfFirst { it.id == cur.id }.coerceAtLeast(0)
+        }
+    }
+
+    fun cycleRepeat() {
+        _repeatMode.value = when (_repeatMode.value) {
+            RepeatMode.NONE -> RepeatMode.ALL
+            RepeatMode.ALL -> RepeatMode.ONE
+            RepeatMode.ONE -> RepeatMode.NONE
+        }
+    }
+
+    fun toggleLike(trackId: Long) {
+        val userId = _currentUser.value?.id ?: return
+        val currentlyLiked = _likedIds.value.contains(trackId)
+        _likedIds.value = if (currentlyLiked) _likedIds.value - trackId else _likedIds.value + trackId
+        viewModelScope.launch {
+            val finalLiked = api.toggleLike(userId, trackId, currentlyLiked)
+            _likedIds.value = if (finalLiked) _likedIds.value + trackId else _likedIds.value - trackId
+        }
+    }
+
+    private fun handleTrackEnded() {
+        when (_repeatMode.value) {
+            RepeatMode.ONE -> {
+                seekToFraction(0f)
+                mediaController?.play()
+            }
+            else -> nextTrack()
+        }
+    }
+
+    override fun onCleared() {
+        mediaController?.release()
+        super.onCleared()
+    }
+}
