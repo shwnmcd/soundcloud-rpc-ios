@@ -37,7 +37,8 @@ import kotlin.math.roundToInt
 @Composable
 fun NowPlayingOverlay(
     vm: AppViewModel,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenJam: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val track by vm.currentTrack.collectAsState()
@@ -50,6 +51,7 @@ fun NowPlayingOverlay(
     val likedIds by vm.likedIds.collectAsState()
     val queue by vm.queue.collectAsState()
     val currentIndex by vm.currentIndex.collectAsState()
+    val jamActive by vm.jam.isActive.collectAsState()
 
     val activeTrack = track ?: return
     val isLiked = likedIds.contains(activeTrack.id)
@@ -76,8 +78,9 @@ fun NowPlayingOverlay(
                 detectDragGestures(
                     onDragEnd = {
                         when {
-                            abs(dragX) > abs(dragY) && dragX < -120f -> vm.nextTrack()
-                            abs(dragX) > abs(dragY) && dragX > 120f -> vm.previousTrack()
+                            // Slide LEFT -> Previous Song · Slide RIGHT -> Next Song
+                            abs(dragX) > abs(dragY) && dragX < -120f -> vm.previousTrack(forcePrevious = true)
+                            abs(dragX) > abs(dragY) && dragX > 120f -> vm.nextTrack()
                             dragY > 180f -> onDismiss()
                         }
                         dragX = 0f
@@ -291,6 +294,9 @@ fun NowPlayingOverlay(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(onClick = onOpenJam) {
+                    Icon(Icons.Default.Groups, contentDescription = "Group Jam", tint = if (jamActive) SCOrange else Color.White.copy(alpha = 0.85f))
+                }
                 IconButton(onClick = { showDiscordPreview = !showDiscordPreview }) {
                     Icon(Icons.Default.SportsEsports, contentDescription = "Discord Preview", tint = if (showDiscordPreview) SCOrange else Color.White.copy(alpha = 0.85f))
                 }

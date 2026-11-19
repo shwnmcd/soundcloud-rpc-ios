@@ -14,6 +14,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.soundcloudrpc.android.data.AppPrefs
 import com.soundcloudrpc.android.data.IntegrationsService
+import com.soundcloudrpc.android.data.JamSessionManager
 import com.soundcloudrpc.android.data.SoundCloudApi
 import com.soundcloudrpc.android.model.*
 import com.soundcloudrpc.android.player.PlaybackService
@@ -97,7 +98,92 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _repeatMode = MutableStateFlow(RepeatMode.NONE)
     val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
 
+    private val _toastMessage = MutableStateFlow<String?>(null)
+    val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
+
     private var originalQueue: List<SCTrack> = emptyList()
+    private var isApplyingRemoteJam = false
+
+    val jam: JamSessionManager = JamSessionManager(
+        scope = viewModelScope,
+        getDisplayName = { _currentUser.value?.displayName ?: android.os.Build.MODEL },
+        getAvatarUrl = { _currentUser.value?.avatarUrl },
+        getCurrentTrack = { _currentTrack.value },
+        getQueue = { _queue.value },
+        getIsPlaying = { _isPlaying.value },
+        getElapsedSec = { _elapsedSec.value },
+        onApplyRemoteState = { track, queueList, shouldPlay, targetSec ->
+            applyRemoteJamState(track, queueList, shouldPlay, targetSec)
+        },
+        onApplyGuestControl = { action, trackRef, seekSec ->
+            when (action) {
+                "play" -> if (!_isPlaying.value) togglePlayPause()
+                "pause" -> if (_isPlaying.value) togglePlayPause()
+                "next" -> nextTrack()
+                "prev" -> previousTrack(forcePrevious = true)
+                "seek" -> if (seekSec != null) seekToSeconds(seekSec.toLong())
+                "track" -> if (trackRef != null) {
+                    val t = trackRef.toSCTrack()
+                    val merged = (_queue.value.filter { it.id != t.id }).let { listOf(t) + it }
+                    playTrack(t, merged)
+                }
+            }
+        },
+        onHostAppendQueue = { track ->
+            appendToQueue(track)
+        },
+        onToast = { msg -> showToast(msg) }
+    )
+
+    fun showToast(msg: String) {
+        _toastMessage.value = msg
+        viewModelScope.launch {
+            delay(2400)
+            if (_toastMessage.value == msg) _toastMessage.value = null
+        }
+    }
+
+    fun appendToQueue(track: SCTrack) {
+        if (_queue.value.isEmpty()) {
+            playTrack(track, listOf(track))
+            return
+        }
+        if (_queue.value.none { it.id == track.id }) {
+            _queue.value = _queue.value + track
+            originalQueue = originalQueue + track
+        }
+    }
+
+    private suspend fun applyRemoteJamState(
+        track: SCTrack,
+        queueList: List<SCTrack>,
+        shouldPlay: Boolean,
+        targetSec: Double
+    ) {
+        isApplyingRemoteJam = true
+        try {
+            val merged = if (queueList.isEmpty()) listOf(track) else queueList
+            _queue.value = merged
+            originalQueue = merged
+            val idx = merged.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            if (_currentTrack.value?.id != track.id) {
+                loadAndPlay(idx, initialSeekMs = (targetSec * 1000.0).toLong(), shouldAutoPlay = shouldPlay, notifyJam = false)
+            } else {
+                _currentIndex.value = idx
+                val curSec = _elapsedSec.value.toDouble()
+                if (kotlin.math.abs(curSec - targetSec) > 1.8) {
+                    mediaController?.seekTo((targetSec * 1000.0).toLong().coerceAtLeast(0L))
+                    _elapsedSec.value = targetSec.toLong().coerceAtLeast(0L)
+                }
+                mediaController?.let { mc ->
+                    if (shouldPlay && !mc.isPlaying) mc.play()
+                    else if (!shouldPlay && mc.isPlaying) mc.pause()
+                }
+            }
+        } finally {
+            isApplyingRemoteJam = false
+        }
+    }
 
     init {
         connectMediaController()
@@ -238,20 +324,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { loadAndPlay(0) }
     }
 
-    private suspend fun loadAndPlay(index: Int) {
+    private suspend fun loadAndPlay(
+        index: Int,
+        initialSeekMs: Long = 0L,
+        shouldAutoPlay: Boolean = true,
+        notifyJam: Boolean = true
+    ) {
         val list = _queue.value
         if (index !in list.indices) return
         val track = list[index]
         _currentIndex.value = index
         _currentTrack.value = track
-        _elapsedSec.value = 0L
+        _elapsedSec.value = (initialSeekMs / 1000L).coerceAtLeast(0L)
         _durationSec.value = track.durationSec.coerceAtLeast(1L)
         _isBuffering.value = true
 
         val streamUrl = api.resolveStreamUrl(track)
         if (streamUrl == null) {
             _isBuffering.value = false
-            if (index + 1 < list.size) loadAndPlay(index + 1)
+            if (!isApplyingRemoteJam && index + 1 < list.size) loadAndPlay(index + 1)
             return
         }
 
@@ -270,15 +361,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mediaController?.let { mc ->
             mc.setMediaItem(mediaItem)
             mc.prepare()
-            mc.play()
+            if (initialSeekMs > 400L) mc.seekTo(initialSeekMs)
+            if (shouldAutoPlay) mc.play() else mc.pause()
         }
         _isBuffering.value = false
-        integrations.onPlaybackProgress(track, 0L, track.durationSec, true)
+        integrations.onPlaybackProgress(track, _elapsedSec.value, track.durationSec, shouldAutoPlay)
+        if (notifyJam && !isApplyingRemoteJam) {
+            jam.onLocalPlaybackEvent("track", _elapsedSec.value.toDouble())
+        }
     }
 
     fun togglePlayPause() {
         val mc = mediaController ?: return
+        val willPlay = !mc.isPlaying
         if (mc.isPlaying) mc.pause() else mc.play()
+        if (!isApplyingRemoteJam) {
+            jam.onLocalPlaybackEvent(if (willPlay) "play" else "pause", _elapsedSec.value.toDouble())
+        }
     }
 
     fun nextTrack() {
@@ -292,10 +391,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun previousTrack() {
+    fun previousTrack(forcePrevious: Boolean = false) {
         val list = _queue.value
         if (list.isEmpty()) return
-        if (_elapsedSec.value > 3L) {
+        if (!forcePrevious && _elapsedSec.value > 3L) {
             seekToFraction(0f)
             return
         }
@@ -315,6 +414,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val targetMs = (durMs * clamped).toLong()
         _elapsedSec.value = targetMs / 1000L
         mediaController?.seekTo(targetMs)
+        if (!isApplyingRemoteJam) {
+            jam.onLocalPlaybackEvent("seek", (targetMs / 1000.0))
+        }
+    }
+
+    fun seekToSeconds(seconds: Long) {
+        val targetMs = (seconds.coerceAtLeast(0L)) * 1000L
+        _elapsedSec.value = seconds.coerceAtLeast(0L)
+        mediaController?.seekTo(targetMs)
+        if (!isApplyingRemoteJam) {
+            jam.onLocalPlaybackEvent("seek", seconds.toDouble())
+        }
     }
 
     fun toggleShuffle() {
@@ -360,6 +471,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        jam.leaveJam(silent = true)
         mediaController?.release()
         super.onCleared()
     }

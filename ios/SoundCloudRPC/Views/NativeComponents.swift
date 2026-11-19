@@ -77,6 +77,7 @@ struct HDArtworkView: View {
 struct SCTrackRowView: View {
     @Environment(\.scTheme) private var theme
     @EnvironmentObject var player: AudioPlayerService
+    @EnvironmentObject var jam: JamSessionService
     let track: SCTrack
     let isCurrentlyPlaying: Bool
     let isLiked: Bool
@@ -144,6 +145,14 @@ struct SCTrackRowView: View {
                     onTapPlay()
                 } label: {
                     Label("Play Now", systemImage: "play.fill")
+                }
+
+                if jam.isActive {
+                    Button {
+                        jam.addTrackToJam(track)
+                    } label: {
+                        Label("Add to Jam Queue", systemImage: "person.2.wave.2.fill")
+                    }
                 }
 
                 Button {
@@ -258,6 +267,7 @@ struct SCPlaylistRowView: View {
 /// Features: Theme-aware glass, animated progress ring, spring heart, AND Slide Left=Previous / Slide Right=Next!
 struct SoundCloudCapsuleMiniPlayer: View {
     @Environment(\.scTheme) private var theme
+    @EnvironmentObject var jam: JamSessionService
     @ObservedObject var player: AudioPlayerService
     @ObservedObject var api: SoundCloudAPI
     @ObservedObject var settings: AppSettings
@@ -313,10 +323,24 @@ struct SoundCloudCapsuleMiniPlayer: View {
                 .buttonStyle(SpringPressButtonStyle(pressedScale: 0.88))
 
                 VStack(alignment: .leading, spacing: 1.5) {
-                    Text(normalized.track)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(theme.textPrimary)
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        Text(normalized.track)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(theme.textPrimary)
+                            .lineLimit(1)
+                        if jam.isActive {
+                            HStack(spacing: 3) {
+                                Circle().fill(Color.green).frame(width: 5, height: 5)
+                                Text("JAM")
+                                    .font(.system(size: 9, weight: .black))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(theme.accent)
+                            .clipShape(Capsule())
+                        }
+                    }
                     Text(normalized.artist)
                         .font(.system(size: 12.5))
                         .foregroundColor(theme.textSecondary)

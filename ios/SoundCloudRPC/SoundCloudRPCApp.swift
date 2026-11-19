@@ -11,6 +11,7 @@ struct SoundCloudRPCApp: App {
     @StateObject private var lastFm = LastFmService()
     @StateObject private var webhooks = WebhookService()
     @StateObject private var nowPlaying = NowPlayingService()
+    @StateObject private var jam = JamSessionService()
     @StateObject private var themePluginManager = ThemePluginManager()
 
     init() {
@@ -30,9 +31,18 @@ struct SoundCloudRPCApp: App {
             .environmentObject(lastFm)
             .environmentObject(webhooks)
             .environmentObject(nowPlaying)
+            .environmentObject(jam)
             .environmentObject(themePluginManager)
             .preferredColorScheme(settings.themeMode.preferredColorScheme)
             .tint(settings.accentPreset.color)
+            .onOpenURL { url in
+                if url.scheme?.lowercased() == "soundcloudrpc" {
+                    let code = JamSessionService.normalizeCode(url.absoluteString)
+                    if code.count >= 4 {
+                        jam.joinJam(codeOrUrl: code)
+                    }
+                }
+            }
         }
     }
 

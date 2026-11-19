@@ -34,6 +34,11 @@ final class AudioPlayerService: ObservableObject {
     weak var lastFm: LastFmService?
     weak var webhooks: WebhookService?
 
+    /// Prevents infinite ping-pong loops when applying incoming Jam sync state
+    var isApplyingRemoteJamSync: Bool = false
+    /// Invoked whenever local playback changes (action, optional seekSeconds) so JamSessionService broadcasts instantly
+    var onLocalPlaybackEvent: ((String, Double?) -> Void)?
+
     var progressFraction: Double {
         guard durationSeconds > 0 else { return 0 }
         return min(1.0, max(0.0, elapsedSeconds / durationSeconds))
@@ -107,19 +112,24 @@ final class AudioPlayerService: ObservableObject {
         }
     }
 
-    private func loadAndPlayTrack(at index: Int) async {
+    private func loadAndPlayTrack(
+        at index: Int,
+        initialSeekSeconds: TimeInterval? = nil,
+        shouldAutoPlay: Bool = true,
+        notifyJam: Bool = true
+    ) async {
         guard queue.indices.contains(index) else { return }
         let track = queue[index]
         currentIndex = index
         currentTrack = track
-        elapsedSeconds = 0
+        elapsedSeconds = initialSeekSeconds ?? 0
         durationSeconds = max(1, track.durationSeconds)
         isLoadingTrack = true
 
         guard let streamURL = await api?.resolveStreamURL(for: track) else {
             isLoadingTrack = false
             // Auto-skip unplayable snippet/geoblocked tracks if more exist
-            if index + 1 < queue.count {
+            if !isApplyingRemoteJamSync && index + 1 < queue.count {
                 await loadAndPlayTrack(at: index + 1)
             }
             return
@@ -133,8 +143,24 @@ final class AudioPlayerService: ObservableObject {
 
         let item = AVPlayerItem(url: streamURL)
         player.replaceCurrentItem(with: item)
-        player.play()
-        isPlaying = true
+
+        if let targetSec = initialSeekSeconds, targetSec > 0.4 {
+            let cmTime = CMTime(seconds: targetSec, preferredTimescale: 600)
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                    continuation.resume()
+                }
+            }
+            elapsedSeconds = targetSec
+        }
+
+        if shouldAutoPlay {
+            player.play()
+            isPlaying = true
+        } else {
+            player.pause()
+            isPlaying = false
+        }
         isLoadingTrack = false
 
         endObserver = NotificationCenter.default.addObserver(
@@ -148,6 +174,9 @@ final class AudioPlayerService: ObservableObject {
         }
 
         syncExternalServices(forceLockScreen: true)
+        if notifyJam && !isApplyingRemoteJamSync {
+            onLocalPlaybackEvent?("track", elapsedSeconds)
+        }
     }
 
     func togglePlayPause() {
@@ -160,6 +189,9 @@ final class AudioPlayerService: ObservableObject {
             isPlaying = true
         }
         syncExternalServices(forceLockScreen: true)
+        if !isApplyingRemoteJamSync {
+            onLocalPlaybackEvent?(isPlaying ? "play" : "pause", elapsedSeconds)
+        }
     }
 
     func nextTrack() {
@@ -192,12 +224,70 @@ final class AudioPlayerService: ObservableObject {
     func seek(toFraction fraction: Double) {
         let clamped = min(1.0, max(0.0, fraction))
         guard durationSeconds > 0 else { return }
-        let targetSec = durationSeconds * clamped
-        elapsedSeconds = targetSec
-        let cmTime = CMTime(seconds: targetSec, preferredTimescale: 600)
+        seek(toSeconds: durationSeconds * clamped, notifyJam: true)
+    }
+
+    func seek(toSeconds targetSec: TimeInterval, notifyJam: Bool = true) {
+        let clampedSec = max(0, min(durationSeconds > 0 ? durationSeconds : targetSec, targetSec))
+        elapsedSeconds = clampedSec
+        let cmTime = CMTime(seconds: clampedSec, preferredTimescale: 600)
         player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             Task { @MainActor in
                 self?.syncExternalServices(forceLockScreen: true)
+            }
+        }
+        if notifyJam && !isApplyingRemoteJamSync {
+            onLocalPlaybackEvent?("seek", clampedSec)
+        }
+    }
+
+    /// Appends a track to the live queue (used by Jam collaborative queue & Up Next)
+    func appendToQueue(_ track: SCTrack) {
+        if queue.isEmpty {
+            play(track: track, in: [track])
+            return
+        }
+        if !queue.contains(where: { $0.id == track.id }) {
+            queue.append(track)
+            originalQueue.append(track)
+        }
+    }
+
+    /// Applies an authoritative Jam playback snapshot from a remote Host with millisecond drift sync!
+    func applyRemoteJamState(
+        track: SCTrack,
+        queueTracks: [SCTrack],
+        shouldPlay: Bool,
+        targetPositionSec: TimeInterval
+    ) async {
+        isApplyingRemoteJamSync = true
+        defer { isApplyingRemoteJamSync = false }
+
+        let mergedQueue = queueTracks.isEmpty ? [track] : queueTracks
+        self.queue = mergedQueue
+        self.originalQueue = mergedQueue
+        let idx = mergedQueue.firstIndex(where: { $0.id == track.id }) ?? 0
+
+        if currentTrack?.id != track.id {
+            await loadAndPlayTrack(
+                at: idx,
+                initialSeekSeconds: targetPositionSec,
+                shouldAutoPlay: shouldPlay,
+                notifyJam: false
+            )
+        } else {
+            currentIndex = idx
+            if abs(elapsedSeconds - targetPositionSec) > 1.8 {
+                seek(toSeconds: targetPositionSec, notifyJam: false)
+            }
+            if shouldPlay && !isPlaying {
+                player.play()
+                isPlaying = true
+                syncExternalServices(forceLockScreen: true)
+            } else if !shouldPlay && isPlaying {
+                player.pause()
+                isPlaying = false
+                syncExternalServices(forceLockScreen: true)
             }
         }
     }

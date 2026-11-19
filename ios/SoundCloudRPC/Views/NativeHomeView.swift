@@ -6,8 +6,10 @@ struct NativeHomeView: View {
     @EnvironmentObject var api: SoundCloudAPI
     @EnvironmentObject var player: AudioPlayerService
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var jam: JamSessionService
 
     let onOpenSettings: () -> Void
+    var onOpenJam: (() -> Void)? = nil
 
     @State private var shelves: [SCHomeShelf] = []
     @State private var followingList: [SCUser] = []
@@ -57,6 +59,38 @@ struct NativeHomeView: View {
                         .buttonStyle(SpringPressButtonStyle())
 
                         Spacer()
+
+                        // Group Listening ("Jam") Pill Button
+                        if let openJam = onOpenJam {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                openJam()
+                            } label: {
+                                HStack(spacing: 5) {
+                                    if jam.isActive {
+                                        Circle()
+                                            .fill(Color.green)
+                                            .frame(width: 7, height: 7)
+                                        Text("Jam · \(jam.listenerCount)")
+                                            .font(.system(size: 12.5, weight: .bold))
+                                            .foregroundColor(.white)
+                                    } else {
+                                        Image(systemName: "person.2.wave.2.fill")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundColor(theme.accent)
+                                        Text("Jam")
+                                            .font(.system(size: 12.5, weight: .semibold))
+                                            .foregroundColor(theme.textPrimary)
+                                    }
+                                }
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 7)
+                                .background(jam.isActive ? theme.accent : theme.pillFill)
+                                .overlay(Capsule().stroke(jam.isActive ? Color.clear : theme.pillStroke, lineWidth: 1))
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(SpringPressButtonStyle(pressedScale: 0.90))
+                        }
 
                         // 1-Tap Dark / Light Mode Quick Switcher
                         Button {

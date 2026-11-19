@@ -50,16 +50,18 @@ class MainActivity : ComponentActivity() {
             notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
+        val deepLinkJamCode = intent?.data?.toString()?.takeIf { it.startsWith("soundcloudrpc://", ignoreCase = true) }
+
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = SCOrange, background = SCBg, surface = SCSurface)) {
-                SoundCloudRPCAndroidApp()
+                SoundCloudRPCAndroidApp(initialJamDeepLink = deepLinkJamCode)
             }
         }
     }
 }
 
 @Composable
-fun SoundCloudRPCAndroidApp(vm: AppViewModel = viewModel()) {
+fun SoundCloudRPCAndroidApp(initialJamDeepLink: String? = null, vm: AppViewModel = viewModel()) {
     val isLoggedIn by vm.isLoggedIn.collectAsState()
     val currentTrack by vm.currentTrack.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
@@ -67,11 +69,21 @@ fun SoundCloudRPCAndroidApp(vm: AppViewModel = viewModel()) {
     val elapsed by vm.elapsedSec.collectAsState()
     val duration by vm.durationSec.collectAsState()
     val likedIds by vm.likedIds.collectAsState()
+    val toastMsg by vm.toastMessage.collectAsState()
+    val jamActive by vm.jam.isActive.collectAsState()
 
     var selectedTab by remember { mutableStateOf(MainTab.HOME) }
     val backStack = remember { mutableStateListOf<DetailRoute>() }
     var showNowPlaying by remember { mutableStateOf(false) }
     var showSignInWeb by remember { mutableStateOf(false) }
+    var showJamSheet by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialJamDeepLink, isLoggedIn) {
+        if (isLoggedIn && !initialJamDeepLink.isNullOrBlank() && !jamActive) {
+            vm.jam.joinJam(initialJamDeepLink)
+            showJamSheet = true
+        }
+    }
 
     BackHandler(enabled = showNowPlaying || backStack.isNotEmpty() || showSignInWeb) {
         when {
@@ -155,7 +167,7 @@ fun SoundCloudRPCAndroidApp(vm: AppViewModel = viewModel()) {
             }
         } else {
             when (selectedTab) {
-                MainTab.HOME -> HomeScreen(vm, onNavigate = navigate)
+                MainTab.HOME -> HomeScreen(vm, onNavigate = navigate, onOpenJam = { showJamSheet = true })
                 MainTab.FEED -> FeedScreen(vm, onNavigate = navigate)
                 MainTab.SEARCH -> SearchScreen(vm, onNavigate = navigate)
                 MainTab.LIBRARY -> LibraryHubScreen(vm, onNavigate = navigate)
@@ -223,7 +235,30 @@ fun SoundCloudRPCAndroidApp(vm: AppViewModel = viewModel()) {
 
         // Full-Screen HD Artwork Now Playing Overlay
         if (showNowPlaying && currentTrack != null) {
-            NowPlayingOverlay(vm = vm, onDismiss = { showNowPlaying = false })
+            NowPlayingOverlay(
+                vm = vm,
+                onDismiss = { showNowPlaying = false },
+                onOpenJam = { showJamSheet = true }
+            )
+        }
+
+        if (showJamSheet) {
+            JamBottomSheet(vm = vm, onDismiss = { showJamSheet = false })
+        }
+
+        // Top Floating Sync/Jam Toast
+        toastMsg?.let { msg ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 12.dp)
+                    .clip(CircleShape)
+                    .background(SCSurface.copy(alpha = 0.94f))
+                    .padding(horizontal = 16.dp, vertical = 9.dp)
+            ) {
+                Text(msg, color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }

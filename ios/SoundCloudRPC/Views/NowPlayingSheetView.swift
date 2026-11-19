@@ -78,6 +78,7 @@ struct NowPlayingSheetView: View {
     @ObservedObject var player: AudioPlayerService
     @ObservedObject var api: SoundCloudAPI
     @ObservedObject var settings: AppSettings
+    @ObservedObject var jam: JamSessionService
     var onOpenArtist: ((SCUser) -> Void)? = nil
 
     @Namespace private var stylePillNamespace
@@ -87,6 +88,7 @@ struct NowPlayingSheetView: View {
     @State private var showDiscordCard = false
     @State private var showQueueSheet = false
     @State private var showAddToPlaylist = false
+    @State private var showJamSheet = false
     @State private var dismissDragOffset: CGFloat = 0
     @State private var swipeXOffset: CGFloat = 0
 
@@ -166,8 +168,32 @@ struct NowPlayingSheetView: View {
                     .padding(.top, 6)
 
                 // Sleek Animated 3-Style Switcher Pill (Vinyl Record · Full Artwork · Ambient Card)
-                playbackStyleSwitcher
-                    .padding(.top, 6)
+                HStack(spacing: 8) {
+                    playbackStyleSwitcher
+
+                    if jam.isActive {
+                        Button {
+                            haptic(.light)
+                            showJamSheet = true
+                        } label: {
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 7, height: 7)
+                                Text("JAM · \(jam.listenerCount)")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(theme.accent)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(SpringPressButtonStyle(pressedScale: 0.90))
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .padding(.top, 6)
 
                 // === MIDDLE INTERACTIVE SWIPE STAGE ===
                 // Slide LEFT -> Previous Song · Slide RIGHT -> Next Song · Slide DOWN -> Dismiss!
@@ -319,6 +345,14 @@ struct NowPlayingSheetView: View {
                     .environment(\.scTheme, theme)
                     .preferredColorScheme(settings.themeMode.preferredColorScheme)
             }
+        }
+        .sheet(isPresented: $showJamSheet) {
+            JamSessionSheet()
+                .environmentObject(jam)
+                .environmentObject(player)
+                .environmentObject(api)
+                .environment(\.scTheme, theme)
+                .preferredColorScheme(settings.themeMode.preferredColorScheme)
         }
     }
 
@@ -702,13 +736,34 @@ struct NowPlayingSheetView: View {
             }
             .padding(.vertical, 2)
 
-            // Elevated Utility Dock: AirPlay · Add to Playlist · Discord RPC · Share · Queue
+            // Elevated Utility Dock: AirPlay · Jam · Add to Playlist · Discord RPC · Queue
             HStack(spacing: 0) {
                 AirPlayPickerButton(
                     tint: useLightInk ? .white : .label,
                     activeTint: UIColor(theme.accent)
                 )
                 .frame(width: 28, height: 28)
+                .frame(maxWidth: .infinity)
+
+                Button {
+                    haptic(.light)
+                    showJamSheet = true
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "person.2.wave.2.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(jam.isActive ? theme.accent : fgSecondary)
+                            .frame(width: 42, height: 40)
+                        if jam.isActive {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 8, height: 8)
+                                .offset(x: -5, y: 7)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(SpringPressButtonStyle(pressedScale: 0.86))
                 .frame(maxWidth: .infinity)
 
                 Button {
@@ -738,17 +793,6 @@ struct NowPlayingSheetView: View {
                 }
                 .buttonStyle(SpringPressButtonStyle(pressedScale: 0.86))
                 .frame(maxWidth: .infinity)
-
-                if let urlStr = track?.permalinkUrl, let shareURL = URL(string: urlStr) {
-                    ShareLink(item: shareURL) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(fgSecondary)
-                            .frame(width: 42, height: 40)
-                            .contentShape(Rectangle())
-                    }
-                    .frame(maxWidth: .infinity)
-                }
 
                 Button {
                     haptic(.light)

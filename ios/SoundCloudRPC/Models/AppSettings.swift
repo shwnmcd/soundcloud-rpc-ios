@@ -92,6 +92,11 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(webhookDiscordFormat, forKey: "webhookDiscordFormat") }
     }
 
+    // Group Listening (Global Jam Relay)
+    @Published var jamRelayUrl: String {
+        didSet { defaults.set(jamRelayUrl, forKey: "jamRelayUrl") }
+    }
+
     // Themes
     @Published var selectedCustomTheme: String {
         didSet { defaults.set(selectedCustomTheme, forKey: "selectedCustomTheme") }
@@ -132,6 +137,7 @@ final class AppSettings: ObservableObject {
         self.webhookTriggerPercentage = defaults.object(forKey: "webhookTriggerPercentage") as? Double ?? 50
         self.webhookDiscordFormat = defaults.object(forKey: "webhookDiscordFormat") as? Bool ?? false
 
+        self.jamRelayUrl = defaults.string(forKey: "jamRelayUrl") ?? "https://ntfy.sh"
         self.selectedCustomTheme = defaults.string(forKey: "selectedCustomTheme") ?? ""
     }
 

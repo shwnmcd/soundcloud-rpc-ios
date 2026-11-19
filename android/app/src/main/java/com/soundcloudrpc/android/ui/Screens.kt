@@ -49,13 +49,16 @@ sealed class DetailRoute {
 @Composable
 fun HomeScreen(
     vm: AppViewModel,
-    onNavigate: (DetailRoute) -> Unit
+    onNavigate: (DetailRoute) -> Unit,
+    onOpenJam: () -> Unit = {}
 ) {
     val user by vm.currentUser.collectAsState()
     val shelves by vm.homeShelves.collectAsState()
     val quickCards by vm.quickCards.collectAsState()
     val likes by vm.likes.collectAsState()
     val isLoading by vm.isLoadingHome.collectAsState()
+    val jamActive by vm.jam.isActive.collectAsState()
+    val jamParticipants by vm.jam.participants.collectAsState()
 
     LazyColumn(
         modifier = Modifier
@@ -95,8 +98,27 @@ fun HomeScreen(
                     Text("Ad-Free Studio", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { vm.refreshAll() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White.copy(alpha = 0.75f))
+                Row(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(if (jamActive) SCOrange else Color.White.copy(alpha = 0.09f))
+                        .clickable { onOpenJam() }
+                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Groups,
+                        contentDescription = "Jam",
+                        tint = if (jamActive) Color.White else SCOrange,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        if (jamActive) "Jam · ${jamParticipants.size.coerceAtLeast(1)}" else "Jam",
+                        color = Color.White,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
                 IconButton(onClick = { onNavigate(DetailRoute.Settings) }) {
                     Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White.copy(alpha = 0.85f))

@@ -11,11 +11,13 @@ struct SettingsView: View {
     @EnvironmentObject var player: AudioPlayerService
     @EnvironmentObject var lastFm: LastFmService
     @EnvironmentObject var webhooks: WebhookService
+    @EnvironmentObject var jam: JamSessionService
 
     var onRequestSignIn: (() -> Void)? = nil
 
     @State private var showingWebhookExample = false
     @State private var showingLastFmAuth = false
+    @State private var showingJamSheet = false
 
     var body: some View {
         NavigationStack {
@@ -125,6 +127,35 @@ struct SettingsView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                }
+
+                // MARK: - Group Listening (Worldwide Jam)
+                Section("Group Listening (Worldwide Jam)") {
+                    Button {
+                        showingJamSheet = true
+                    } label: {
+                        HStack {
+                            Label(
+                                jam.isActive ? "Active Jam · \(jam.roomCode) (\(jam.listenerCount) listening)" : "Start or Join a Jam",
+                                systemImage: "person.2.wave.2.fill"
+                            )
+                            Spacer()
+                            if jam.isActive {
+                                Circle().fill(Color.green).frame(width: 8, height: 8)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Global Relay Server (Default: https://ntfy.sh)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+                        TextField("https://ntfy.sh", text: $settings.jamRelayUrl)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .font(.subheadline)
+                    }
                 }
 
                 // MARK: - SoundCloud Account & Sync
@@ -317,9 +348,14 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("App", value: "SoundCloud RPC v2.4 (Native iOS & iPadOS)")
+                    LabeledContent("App", value: "SoundCloud RPC v2.5 (Native iOS & iPadOS)")
                     LabeledContent("Based on", value: "richardhbtz/soundcloud-rpc (MIT)")
                 }
+            }
+            .sheet(isPresented: $showingJamSheet) {
+                JamSessionSheet()
+                    .environment(\.scTheme, theme)
+                    .preferredColorScheme(settings.themeMode.preferredColorScheme)
             }
             .navigationTitle(settings.t("settings"))
             .navigationBarTitleDisplayMode(.inline)

@@ -45,6 +45,7 @@ struct ContentView: View {
     @EnvironmentObject var lastFm: LastFmService
     @EnvironmentObject var webhooks: WebhookService
     @EnvironmentObject var nowPlaying: NowPlayingService
+    @EnvironmentObject var jam: JamSessionService
 
     @Namespace private var tabBarNamespace
 
@@ -52,6 +53,7 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var showingNowPlaying = false
     @State private var showingLoginSheet = false
+    @State private var showingJamSheet = false
     @State private var presentedArtistFromPlayer: SCUser? = nil
     @State private var refreshTrigger = UUID()
 
@@ -102,11 +104,17 @@ struct ContentView: View {
             }
             .preferredColorScheme(settings.themeMode.preferredColorScheme)
         }
+        .sheet(isPresented: $showingJamSheet) {
+            JamSessionSheet()
+                .environment(\.scTheme, theme)
+                .preferredColorScheme(settings.themeMode.preferredColorScheme)
+        }
         .fullScreenCover(isPresented: $showingNowPlaying) {
             NowPlayingSheetView(
                 player: player,
                 api: api,
                 settings: settings,
+                jam: jam,
                 onOpenArtist: { artist in
                     withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
                         presentedArtistFromPlayer = artist
@@ -125,6 +133,7 @@ struct ContentView: View {
                 lastFm: lastFm,
                 webhooks: webhooks
             )
+            jam.bind(player: player, api: api, settings: settings)
             await authBridge.bootstrap()
             if authBridge.isReady {
                 await api.syncLibrary(showConfirmationToast: false)
@@ -222,7 +231,10 @@ struct ContentView: View {
                 } else {
                     switch selectedTab {
                     case .home:
-                        NativeHomeView(onOpenSettings: { showingSettings = true })
+                        NativeHomeView(
+                            onOpenSettings: { showingSettings = true },
+                            onOpenJam: { showingJamSheet = true }
+                        )
                     case .feed:
                         NativeFeedView()
                     case .search:
@@ -305,6 +317,27 @@ struct ContentView: View {
                 Spacer()
 
                 Button {
+                    showingJamSheet = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.2.wave.2.fill").frame(width: 22)
+                        Text(jam.isActive ? "Live Jam (\(jam.listenerCount))" : "Group Jam")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        if jam.isActive {
+                            Circle().fill(Color.green).frame(width: 8, height: 8)
+                        }
+                    }
+                    .foregroundColor(jam.isActive ? theme.accent : theme.textPrimary.opacity(0.85))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(jam.isActive ? theme.accent.opacity(0.14) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.horizontal, 8)
+                }
+                .buttonStyle(SpringPressButtonStyle(pressedScale: 0.96))
+
+                Button {
                     showingSettings = true
                 } label: {
                     HStack(spacing: 12) {
@@ -338,7 +371,10 @@ struct ContentView: View {
                     } else {
                         switch selectedTab {
                         case .home:
-                            NativeHomeView(onOpenSettings: { showingSettings = true })
+                            NativeHomeView(
+                                onOpenSettings: { showingSettings = true },
+                                onOpenJam: { showingJamSheet = true }
+                            )
                         case .feed:
                             NativeFeedView()
                         case .search:
