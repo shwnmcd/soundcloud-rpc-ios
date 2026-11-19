@@ -90,11 +90,11 @@ class SoundCloudApi(private val prefs: AppPrefs) {
             tracks to next
         }.getOrDefault(emptyList<SCTrack>() to null)
 
-    suspend fun fetchLibraryPlaylistsAndAlbums(): Pair<List<SCPlaylist>, List<SCPlaylist>> = runCatching {
+    suspend fun fetchLibraryPlaylistsAndAlbums(): Pair<List<SCPlaylist>, List<SCPlaylist>> = runCatching<Pair<List<SCPlaylist>, List<SCPlaylist>>> {
         val root = JsonParser.parseString(
             requestJson("https://api-v2.soundcloud.com/me/library/all?limit=100")
         ).asJsonObject
-        val col = root.getAsJsonArray("collection") ?: return@runCatching (emptyList<SCPlaylist>() to emptyList())
+        val col = root.getAsJsonArray("collection") ?: return@runCatching (emptyList<SCPlaylist>() to emptyList<SCPlaylist>())
         val playlists = mutableListOf<SCPlaylist>()
         val albums = mutableListOf<SCPlaylist>()
         for (el in col) {
@@ -103,8 +103,8 @@ class SoundCloudApi(private val prefs: AppPrefs) {
             val pl = runCatching { gson.fromJson(raw, SCPlaylist::class.java) }.getOrNull() ?: continue
             if (pl.isAlbum == true) albums.add(pl) else playlists.add(pl)
         }
-        playlists to albums
-    }.getOrDefault(emptyList<SCPlaylist>() to emptyList())
+        playlists.toList() to albums.toList()
+    }.getOrDefault(emptyList<SCPlaylist>() to emptyList<SCPlaylist>())
 
     suspend fun fetchFullPlaylistTracks(playlistId: Long): Pair<SCPlaylist?, List<SCTrack>> = runCatching {
         val pl = gson.fromJson(
