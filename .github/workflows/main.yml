@@ -1,0 +1,53 @@
+name: Build iOS & iPadOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build Unsigned Release App
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project SoundCloudRPC.xcodeproj \
+            -scheme SoundCloudRPC \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            build
+
+      - name: Package IPA
+        working-directory: ios
+        run: |
+          mkdir -p dist/Payload
+          cp -r build/Build/Products/Release-iphoneos/SoundCloudRPC.app dist/Payload/
+          cd dist
+          zip -r -y SoundCloudRPC.ipa Payload
+          ls -lh SoundCloudRPC.ipa
+
+      - name: Upload SoundCloudRPC.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoundCloudRPC-iOS-IPA
+          path: ios/dist/SoundCloudRPC.ipa
+          retention-days: 30
