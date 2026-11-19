@@ -2,6 +2,50 @@ import SwiftUI
 import WebKit
 import UIKit
 
+enum LibrarySection: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case likes = "Likes"
+    case playlists = "Playlists"
+    case albums = "Albums"
+    case stations = "Stations"
+    case following = "Following"
+    case history = "History"
+
+    var id: String { rawValue }
+
+    var urlString: String {
+        switch self {
+        case .overview: return "https://soundcloud.com/you/library"
+        case .likes: return "https://soundcloud.com/you/likes"
+        case .playlists: return "https://soundcloud.com/you/sets"
+        case .albums: return "https://soundcloud.com/you/albums"
+        case .stations: return "https://soundcloud.com/you/stations"
+        case .following: return "https://soundcloud.com/you/following"
+        case .history: return "https://soundcloud.com/you/history"
+        }
+    }
+}
+
+enum SearchFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case tracks = "Tracks"
+    case people = "Artists"
+    case albums = "Albums"
+    case sets = "Playlists"
+
+    var id: String { rawValue }
+
+    var pathSuffix: String {
+        switch self {
+        case .all: return ""
+        case .tracks: return "/sounds"
+        case .people: return "/people"
+        case .albums: return "/albums"
+        case .sets: return "/sets"
+        }
+    }
+}
+
 @MainActor
 final class WebViewController: ObservableObject {
     @Published var canGoBack: Bool = false
@@ -12,6 +56,27 @@ final class WebViewController: ObservableObject {
     @Published var currentTrack: TrackInfo = TrackInfo()
 
     weak var webView: WKWebView?
+
+    /// Returns true only when the user has navigated into a track, playlist, artist, or sub-page (not a root tab)
+    var isDetailPage: Bool {
+        guard canGoBack, let path = currentURL?.path.lowercased() else { return false }
+        let rootPaths: Set<String> = [
+            "", "/", "/discover", "/feed",
+            "/search", "/search/sounds", "/search/people", "/search/albums", "/search/sets",
+            "/you/library", "/you/likes", "/you/sets", "/you/albums", "/you/stations", "/you/following", "/you/history"
+        ]
+        let trimmed = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
+        return !rootPaths.contains(trimmed)
+    }
+
+    var detailPageTitle: String {
+        guard let path = currentURL?.path else { return "SoundCloud" }
+        let parts = path.split(separator: "/").map(String.init)
+        if let last = parts.last, !last.isEmpty {
+            return last.replacingOccurrences(of: "-", with: " ").capitalized
+        }
+        return "SoundCloud"
+    }
 
     func goBack() {
         webView?.goBack()
@@ -33,16 +98,17 @@ final class WebViewController: ObservableObject {
         load(urlString: "https://soundcloud.com/feed")
     }
 
-    func loadLibrary() {
-        load(urlString: "https://soundcloud.com/you/library")
+    func loadLibrary(section: LibrarySection = .overview) {
+        load(urlString: section.urlString)
     }
 
-    func loadSearch(query: String = "") {
+    func loadSearch(query: String = "", filter: SearchFilter = .all) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = "https://soundcloud.com/search\(filter.pathSuffix)"
         if trimmed.isEmpty {
-            load(urlString: "https://soundcloud.com/search")
+            load(urlString: base)
         } else if let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-            load(urlString: "https://soundcloud.com/search?q=\(encoded)")
+            load(urlString: "\(base)?q=\(encoded)")
         }
     }
 
@@ -167,7 +233,7 @@ struct SoundCloudWebView: UIViewRepresentable {
         )
         ucc.addUserScript(monitorScript)
 
-        // Inject Dark Mode + Mobile App Responsive Layout + AdBlocker Cosmetics + Custom Theme CSS
+        // Inject Dark Mode + Sleek Mobile App Layout + AdBlocker Cosmetics + Custom Theme CSS
         let initialThemeJS = WebViewScripts.themeAndCosmeticScript(
             isDark: settings.darkMode,
             mobileAppLayout: settings.mobileAppLayout,
@@ -186,9 +252,10 @@ struct SoundCloudWebView: UIViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         webView.isOpaque = false
-        webView.backgroundColor = settings.darkMode ? UIColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1) : .white
+        webView.backgroundColor = settings.darkMode ? UIColor(red: 0.071, green: 0.071, blue: 0.071, alpha: 1) : .white
         webView.scrollView.backgroundColor = webView.backgroundColor
         webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.keyboardDismissMode = .onDrag
 
         // Native iOS Pull-to-Refresh
         let refreshControl = UIRefreshControl()
@@ -215,7 +282,7 @@ struct SoundCloudWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        webView.backgroundColor = settings.darkMode ? UIColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1) : .white
+        webView.backgroundColor = settings.darkMode ? UIColor(red: 0.071, green: 0.071, blue: 0.071, alpha: 1) : .white
         webView.scrollView.backgroundColor = webView.backgroundColor
     }
 
@@ -267,7 +334,6 @@ struct SoundCloudWebView: UIViewRepresentable {
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
             if let url = navigationAction.request.url {
-                // Intercept Last.fm OAuth token redirect automatically
                 if url.host?.contains("soundcloud.com") == true,
                    let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
                    let token = components.queryItems?.first(where: { $0.name == "token" })?.value,

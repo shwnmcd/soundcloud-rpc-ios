@@ -145,11 +145,7 @@ enum WebViewScripts {
     })();
     """
 
-    /// Deep 4-layer Audio Ad Blocker injected at document-start:
-    /// 1) Intercepts fetch() ad/VAST/audio_ads requests with clean empty JSON/VAST so player skips break instantly
-    /// 2) Intercepts XMLHttpRequest (used heavily by SoundCloud's web player for audio ads!)
-    /// 3) Strips audio_ad / visual_ad / promoted items from SoundCloud API responses
-    /// 4) Active Audio-Ad failsafe monitor: instantly mutes & fast-forwards any audio ad element that slips through
+    /// Deep 4-layer Audio Ad Blocker injected at document-start
     static let adBlockerRuntimeGuardScript: String = """
     (function() {
       if (window.__scRpcAdGuardV2) return;
@@ -178,7 +174,7 @@ enum WebViewScripts {
         window.fetch = function(input, init) {
           const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
           if (url && AD_URL_REGEX.test(url)) {
-            notifyAdBlocked('fetch:' + url.slice(0, 60));
+            notifyAdBlocked('fetch');
             const mock = emptyResponseBodyFor(url);
             return Promise.resolve(new Response(mock.body, {
               status: 200,
@@ -189,7 +185,7 @@ enum WebViewScripts {
         };
       }
 
-      // Layer 2B: Intercept XMLHttpRequest (critical for SoundCloud web audio ads!)
+      // Layer 2B: Intercept XMLHttpRequest
       const origOpen = XMLHttpRequest.prototype.open;
       const origSend = XMLHttpRequest.prototype.send;
 
@@ -201,7 +197,7 @@ enum WebViewScripts {
       XMLHttpRequest.prototype.send = function(body) {
         const url = this.__scRpcUrl || '';
         if (url && AD_URL_REGEX.test(url)) {
-          notifyAdBlocked('xhr:' + url.slice(0, 60));
+          notifyAdBlocked('xhr');
           const mock = emptyResponseBodyFor(url);
           const xhr = this;
           try {
@@ -225,12 +221,11 @@ enum WebViewScripts {
         return origSend.apply(this, arguments);
       };
 
-      // Layer 3: Active Audio-Ad Failsafe Monitor (mutes & fast-forwards any audio ad that slips through)
+      // Layer 3: Active Audio-Ad Failsafe Monitor
       let savedVolume = 1.0;
       let mutingAd = false;
 
       function isAudioAdPlaying() {
-        // SoundCloud marks ad UI in several ways during audio ad breaks
         if (document.querySelector('.audioAd, .visualAd, .adOverlay, .adCountdown, .playControls__ad, .m-isAd, [class*="audioAd"], [data-testid="audio-ad"]')) {
           return true;
         }
@@ -270,7 +265,6 @@ enum WebViewScripts {
               }
               try { media.playbackRate = 16.0; } catch (e) {}
             });
-            // Dismiss any visual ad close/skip buttons
             const skipAdBtn = document.querySelector('.adOverlay__close, .audioAd__skip, [class*="skipAd"]');
             if (skipAdBtn) skipAdBtn.click();
           } else if (mutingAd) {
@@ -286,7 +280,7 @@ enum WebViewScripts {
     })();
     """
 
-    /// Generates JS to apply Dark Mode, Mobile App Responsive Layout, AdBlocker cosmetics, and Custom CSS Theme
+    /// Generates JS to apply Dark Mode, Sleek Spotify-inspired Mobile/iPad App CSS, AdBlocker cosmetics, and Custom CSS
     static func themeAndCosmeticScript(
         isDark: Bool,
         mobileAppLayout: Bool,
@@ -301,6 +295,7 @@ enum WebViewScripts {
         .goUpsellBanner, .upsellBanner, .mobileAppBanner, .appInstallBanner,
         .webBanner, .announcement, .adCountdown, .playControls__ad,
         .header__proUpsell, .l-footer, .mobileApps, .creatorSubscriptionsUpsell,
+        .l-footer-mini, .footer, .sidebarHeader__actualTitle[href*="go"],
         [data-testid="ad-banner"], [class*="upsell"], [class*="AdSlot"],
         li.soundList__item:has(.sc-promoted-icon) {
             display: none !important;
@@ -308,23 +303,34 @@ enum WebViewScripts {
         """ : ""
 
         let mobileLayoutCSS = mobileAppLayout ? """
-        /* === Native iOS Mobile App Adaptation for SoundCloud === */
+        /* === Sleek Spotify-Inspired iPhone & iPad Native App Styling === */
         html, body {
             max-width: 100vw !important;
             overflow-x: hidden !important;
             -webkit-overflow-scrolling: touch !important;
             padding-top: 0 !important;
             padding-bottom: 140px !important;
+            background-color: var(--background-base, #121212) !important;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif !important;
         }
 
-        /* Hide SoundCloud's desktop top header — replaced by native Apple navigation bar */
+        /* Hide SoundCloud's desktop website chrome (replaced by native SwiftUI header, chips & tab bar) */
         header.header,
         .header,
-        .announcements {
+        .announcements,
+        .collection__nav,
+        .collectionNav,
+        .g-tabs-large,
+        .searchTitle,
+        .searchOptions,
+        .search .l-sidebar-left,
+        .tileGallery__sliderButton,
+        .playableTile__actions,
+        .l-product-banners {
             display: none !important;
         }
 
-        /* Move SoundCloud's web bottom player off-screen (keeping layout geometry intact so native Play/Seek/Like work!) */
+        /* Keep playControls mounted off-screen so Play/Pause/Next/Like/Seek stay 100% functional */
         .playControls {
             position: fixed !important;
             left: -9999px !important;
@@ -335,7 +341,7 @@ enum WebViewScripts {
             z-index: -1 !important;
         }
 
-        /* Collapse fixed 1240px desktop containers to clean 100% mobile width */
+        /* Collapse fixed 1240px desktop containers to clean full-width app canvas */
         #app,
         .l-container,
         .l-container.l-content,
@@ -349,7 +355,9 @@ enum WebViewScripts {
         .l-listen-engagement,
         .listenDetails,
         .search,
+        .search__results,
         .collection,
+        .collectionSection,
         .stream,
         .userNetwork,
         .profileHeader {
@@ -359,15 +367,17 @@ enum WebViewScripts {
             margin-left: 0 !important;
             margin-right: 0 !important;
             box-sizing: border-box !important;
+            background: transparent !important;
         }
 
         .l-container.l-content {
-            padding: 8px 12px 140px 12px !important;
+            padding: 8px 14px 150px 14px !important;
         }
 
         .l-fluid-fixed .l-main,
         .l-three-column .l-main,
-        .l-two-column .l-main {
+        .l-two-column .l-main,
+        .search .l-main {
             float: none !important;
             width: 100% !important;
             margin: 0 !important;
@@ -375,40 +385,173 @@ enum WebViewScripts {
             border: none !important;
         }
 
-        /* Stack desktop right sidebar neatly below main feed instead of clipping */
-        .l-sidebar-right,
-        .l-sidebar-left {
+        /* Hide cluttered sidebar promos on Home/Search; stack gracefully on track detail pages */
+        .l-front .l-sidebar-right,
+        .stream .l-sidebar-right {
+            display: none !important;
+        }
+        .l-sidebar-right {
             position: static !important;
             float: none !important;
             width: 100% !important;
-            margin: 18px 0 0 0 !important;
-            padding: 12px 0 0 0 !important;
+            margin: 22px 0 0 0 !important;
+            padding: 16px 0 0 0 !important;
             border-top: 1px solid rgba(255,255,255,0.08) !important;
         }
 
-        /* Responsive Track / Playlist Hero Banner */
+        /* === BIG, SLEEK SPOTIFY-STYLE HORIZONTAL CAROUSEL CARDS ON HOME === */
+        .mixedSelectionModule,
+        .collectionSection {
+            margin-bottom: 24px !important;
+            border: none !important;
+            padding: 0 !important;
+        }
+        .mixedSelectionModule__titleText,
+        .collectionSection__heading {
+            font-size: 21px !important;
+            font-weight: 700 !important;
+            letter-spacing: -0.3px !important;
+            margin-bottom: 12px !important;
+        }
+        .tileGallery__sliderPanel {
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            -webkit-overflow-scrolling: touch !important;
+            scrollbar-width: none !important;
+            padding-bottom: 4px !important;
+        }
+        .tileGallery__sliderPanel::-webkit-scrollbar {
+            display: none !important;
+        }
+        .tileGallery__sliderPanelSlide {
+            display: flex !important;
+            flex-wrap: nowrap !important;
+            gap: 14px !important;
+            width: max-content !important;
+            transform: none !important;
+        }
+        .tileGallery__slide {
+            flex: 0 0 154px !important;
+            width: 154px !important;
+            min-width: 154px !important;
+            max-width: 154px !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        .tileGallery__slide .playableTile,
+        .tileGallery__slide .playableTile__artwork,
+        .tileGallery__slide .playableTile__artworkLink,
+        .tileGallery__slide .image {
+            width: 154px !important;
+            height: auto !important;
+        }
+        .tileGallery__slide .playableTile__artwork {
+            width: 154px !important;
+            height: 154px !important;
+            border-radius: 10px !important;
+            overflow: hidden !important;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.35) !important;
+        }
+        .playableTile__artwork .image__full {
+            width: 100% !important;
+            height: 100% !important;
+            border-radius: 10px !important;
+        }
+        .playableTile__description {
+            margin-top: 8px !important;
+        }
+        .playableTile__heading {
+            font-size: 13.5px !important;
+            font-weight: 600 !important;
+            line-height: 1.3 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+        .playableTile__usernameHeading {
+            font-size: 12px !important;
+            opacity: 0.68 !important;
+            margin-top: 2px !important;
+        }
+
+        /* === CLEAN 2-COLUMN (iPhone) / 4-COLUMN (iPad) LIBRARY GRID === */
+        .badgeList,
+        .lazyLoadingList__list {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 14px !important;
+            width: 100% !important;
+        }
+        @media (min-width: 700px) {
+            .badgeList,
+            .lazyLoadingList__list {
+                grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            }
+            .tileGallery__slide,
+            .tileGallery__slide .playableTile,
+            .tileGallery__slide .playableTile__artwork {
+                flex: 0 0 180px !important;
+                width: 180px !important;
+                min-width: 180px !important;
+            }
+            .tileGallery__slide .playableTile__artwork {
+                height: 180px !important;
+            }
+        }
+        /* Keep vertical track lists & search results single-column */
+        .searchList .lazyLoadingList__list,
+        .stream .lazyLoadingList__list,
+        .soundList.lazyLoadingList__list,
+        .trackList__list {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 10px !important;
+        }
+        .badgeList__item {
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .badgeList__item .playableTile__artwork,
+        .badgeList__item .image {
+            width: 100% !important;
+            aspect-ratio: 1 / 1 !important;
+            height: auto !important;
+            border-radius: 10px !important;
+            overflow: hidden !important;
+        }
+        /* Tone down SoundCloud's huge blocky white square pause overlay on thumbnails */
+        .playableTile__playButton .sc-button-play {
+            border-radius: 50% !important;
+            transform: scale(0.78) !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+        }
+
+        /* === SLEEK TRACK / PLAYLIST DETAIL HERO === */
         .fullListenHero,
         .fullHero {
             height: auto !important;
-            min-height: 240px !important;
-            padding: 16px !important;
-            border-radius: 14px !important;
+            min-height: 220px !important;
+            padding: 18px 16px !important;
+            border-radius: 16px !important;
             overflow: hidden !important;
+            margin-bottom: 14px !important;
         }
         .fullHero__foreground {
             position: relative !important;
             display: flex !important;
             flex-direction: column !important;
-            gap: 12px !important;
+            gap: 14px !important;
             padding: 0 !important;
         }
         .fullHero__artwork {
             position: relative !important;
-            width: 180px !important;
-            height: 180px !important;
+            width: 185px !important;
+            height: 185px !important;
             margin: 0 auto !important;
             border-radius: 12px !important;
             overflow: hidden !important;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.45) !important;
         }
         .fullHero__title,
         .fullHero__playerArea {
@@ -420,20 +563,26 @@ enum WebViewScripts {
             margin: 0 !important;
         }
 
-        /* Clean mobile track cards & lists */
+        /* === CLEAN TRACK ROWS & FEED CARDS === */
+        .soundList__item {
+            border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+            padding: 10px 0 !important;
+            margin: 0 !important;
+        }
         .sound__body {
             display: flex !important;
             flex-direction: column !important;
             gap: 8px !important;
         }
         .sound__coverArt {
-            width: 72px !important;
-            height: 72px !important;
+            width: 68px !important;
+            height: 68px !important;
             border-radius: 8px !important;
             overflow: hidden !important;
         }
         .soundTitle__title {
             font-size: 15px !important;
+            font-weight: 600 !important;
             line-height: 1.3 !important;
             white-space: normal !important;
         }
@@ -441,21 +590,19 @@ enum WebViewScripts {
             flex-wrap: wrap !important;
             gap: 6px !important;
         }
-
-        /* Mobile-friendly horizontal carousels on Discover/Home */
-        .tileGallery__sliderPanel {
-            overflow-x: auto !important;
-            -webkit-overflow-scrolling: touch !important;
+        .sc-button {
+            border-radius: 999px !important;
         }
 
-        /* Prevent iOS Safari zoom on input focus */
+        /* Clean empty search prompt */
+        .searchList__empty {
+            padding: 40px 16px !important;
+            text-align: center !important;
+            opacity: 0.7 !important;
+        }
+
         input, textarea, select {
             font-size: 16px !important;
-        }
-
-        /* Crisp rounded touch buttons */
-        .sc-button {
-            border-radius: 10px !important;
         }
         """ : ""
 
@@ -465,7 +612,6 @@ enum WebViewScripts {
         return """
         (function() {
           try {
-            // Ensure responsive mobile viewport meta tag when mobileAppLayout is enabled
             if (\(mobileAppLayout ? "true" : "false")) {
               let vp = document.querySelector('meta[name="viewport"]');
               if (!vp) {
