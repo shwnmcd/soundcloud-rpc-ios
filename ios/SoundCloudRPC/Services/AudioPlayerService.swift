@@ -20,6 +20,8 @@ final class AudioPlayerService: ObservableObject {
     @Published private(set) var durationSeconds: TimeInterval = 0
     @Published var isShuffling: Bool = false
     @Published var repeatMode: RepeatMode = .none
+    /// Tracks last directional skip (-1 = previous, +1 = next) for silky UI transitions
+    @Published private(set) var lastSkipDirection: Int = 1
 
     private var player: AVPlayer = AVPlayer()
     private var timeObserver: Any?
@@ -162,6 +164,7 @@ final class AudioPlayerService: ObservableObject {
 
     func nextTrack() {
         guard !queue.isEmpty else { return }
+        lastSkipDirection = 1
         if currentIndex + 1 < queue.count {
             Task { await loadAndPlayTrack(at: currentIndex + 1) }
         } else if repeatMode == .all {
@@ -169,10 +172,11 @@ final class AudioPlayerService: ObservableObject {
         }
     }
 
-    func previousTrack() {
+    func previousTrack(forcePrevious: Bool = false) {
         guard !queue.isEmpty else { return }
-        // Standard Apple Music / Spotify behavior: if > 3s into song, restart song; otherwise go to previous
-        if elapsedSeconds > 3.0 {
+        lastSkipDirection = -1
+        // On button tap: if > 3s into song, restart song; on explicit swipe-left: always go back a song!
+        if !forcePrevious && elapsedSeconds > 3.0 {
             seek(toFraction: 0)
             return
         }
@@ -221,9 +225,9 @@ final class AudioPlayerService: ObservableObject {
     }
 
     func toggleLikeCurrent() {
-        guard let id = currentTrack?.id else { return }
+        guard let track = currentTrack else { return }
         Task {
-            _ = await api?.toggleLike(trackId: id)
+            _ = await api?.toggleLike(track: track)
         }
     }
 

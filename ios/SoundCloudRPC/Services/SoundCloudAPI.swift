@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 struct SCArtistProfile {
     let user: SCUser?
@@ -16,17 +17,78 @@ struct SCArtistProfile {
 final class SoundCloudAPI: ObservableObject {
     @Published var currentUser: SCUser?
     @Published var likedTrackIds: Set<Int> = []
+    @Published var likedTracks: [SCTrack] = []
+    @Published var likedNextHref: String?
+    @Published var userPlaylists: [SCPlaylist] = []
+    @Published var userAlbums: [SCPlaylist] = []
     @Published var followingUserIds: Set<Int> = []
+    @Published var playlistArtworkCache: [Int: String] = [:]
+    @Published var localPlaylistCoverURLs: [Int: URL] = [:]
+
+    @Published var isSyncingLibrary: Bool = false
+    @Published var lastSyncedAt: Date?
+    @Published var syncToastMessage: String?
     @Published var lastError: String?
 
     weak var authBridge: SoundCloudAuthBridge?
     private let decoder = JSONDecoder()
+    private var toastDismissTask: Task<Void, Never>?
 
     private var clientId: String { authBridge?.clientId ?? "" }
     private var oauthToken: String { authBridge?.oauthToken ?? "" }
 
+    init() {
+        loadCachedLocalCovers()
+    }
+
+    func showToast(_ message: String) {
+        toastDismissTask?.cancel()
+        syncToastMessage = message
+        toastDismissTask = Task {
+            try? await Task.sleep(nanoseconds: 2_300_000_000)
+            guard !Task.isCancelled else { return }
+            syncToastMessage = nil
+        }
+    }
+
+    // MARK: - Playlist Cover Helpers (Synced SoundCloud URL + Local Instant Cache)
+    private var coversDirectory: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("PlaylistCovers", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
+    private func loadCachedLocalCovers() {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: coversDirectory, includingPropertiesForKeys: nil) else { return }
+        var map: [Int: URL] = [:]
+        for url in files where url.pathExtension.lowercased() == "jpg" {
+            let stem = url.deletingPathExtension().lastPathComponent
+            if stem.hasPrefix("playlist_"), let id = Int(stem.replacingOccurrences(of: "playlist_", with: "")) {
+                map[id] = url
+            }
+        }
+        self.localPlaylistCoverURLs = map
+    }
+
+    func resolvedArtwork(for playlist: SCPlaylist) -> String? {
+        if let local = localPlaylistCoverURLs[playlist.id] {
+            return local.absoluteString
+        }
+        if let cached = playlistArtworkCache[playlist.id], !cached.isEmpty {
+            return cached
+        }
+        return playlist.rawArtwork
+    }
+
     // MARK: - Core Authenticated Request Helper
-    private func requestData(urlString: String, method: String = "GET") async throws -> Data {
+    private func requestData(
+        urlString: String,
+        method: String = "GET",
+        jsonBody: Any? = nil
+    ) async throws -> Data {
         guard var components = URLComponents(string: urlString) else {
             throw URLError(.badURL)
         }
@@ -39,17 +101,23 @@ final class SoundCloudAPI: ObservableObject {
 
         var req = URLRequest(url: finalURL)
         req.httpMethod = method
-        req.timeoutInterval = 15
+        req.timeoutInterval = 18
         if !oauthToken.isEmpty {
             req.setValue("OAuth \(oauthToken)", forHTTPHeaderField: "Authorization")
         }
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("https://soundcloud.com", forHTTPHeaderField: "Origin")
+        req.setValue("https://soundcloud.com/", forHTTPHeaderField: "Referer")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+
+        if let jsonBody {
+            req.httpBody = try JSONSerialization.data(withJSONObject: jsonBody)
+            req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: req)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             if http.statusCode == 401 {
-                // Trigger client_id refresh silently
                 authBridge?.startHiddenClientIdHarvester()
             }
             throw NSError(domain: "SoundCloudAPI", code: http.statusCode, userInfo: [
@@ -57,6 +125,32 @@ final class SoundCloudAPI: ObservableObject {
             ])
         }
         return data
+    }
+
+    // MARK: - Full Two-Way Library Sync (Likes + Playlists + Images + Following)
+    func syncLibrary(showConfirmationToast: Bool = false) async {
+        guard !isSyncingLibrary else { return }
+        isSyncingLibrary = true
+        defer { isSyncingLibrary = false }
+
+        if currentUser == nil {
+            _ = await fetchMe()
+        }
+
+        async let likesTask = fetchLikes(limit: 80)
+        async let libTask = fetchLibraryPlaylistsAndAlbums()
+        async let followTask = fetchFollowing()
+
+        let (likesRes, libRes, _) = await (likesTask, libTask, followTask)
+        self.likedTracks = likesRes.tracks
+        self.likedNextHref = likesRes.nextHref
+        self.userPlaylists = libRes.playlists
+        self.userAlbums = libRes.albums
+        self.lastSyncedAt = Date()
+
+        if showConfirmationToast {
+            showToast("Synced \(likedTracks.count) likes & \(userPlaylists.count) playlists")
+        }
     }
 
     // MARK: - Current User
@@ -111,7 +205,7 @@ final class SoundCloudAPI: ObservableObject {
                 id: "pl-\(firstPl.id)",
                 title: firstPl.displayTitle,
                 subtitle: firstPl.creatorName,
-                artworkUrl: firstPl.thumbArtworkUrl,
+                artworkUrl: resolvedArtwork(for: firstPl) ?? firstPl.thumbArtworkUrl,
                 isCircular: false,
                 playlist: firstPl,
                 user: nil
@@ -133,7 +227,7 @@ final class SoundCloudAPI: ObservableObject {
                 id: "pl-\(pl.id)",
                 title: pl.displayTitle,
                 subtitle: pl.creatorName,
-                artworkUrl: pl.thumbArtworkUrl,
+                artworkUrl: resolvedArtwork(for: pl) ?? pl.thumbArtworkUrl,
                 isCircular: false,
                 playlist: pl,
                 user: nil
@@ -142,7 +236,7 @@ final class SoundCloudAPI: ObservableObject {
         return Array(cards.prefix(4))
     }
 
-    // MARK: - Likes (with Pagination & ID Cache)
+    // MARK: - Likes (with Pagination & Reactive Shared Cache)
     func fetchLikes(nextHref: String? = nil, limit: Int = 50) async -> (tracks: [SCTrack], nextHref: String?) {
         guard let userId = currentUser?.id else { return ([], nil) }
         let url = nextHref ?? "https://api-v2.soundcloud.com/users/\(userId)/track_likes?limit=\(limit)&linked_partitioning=1"
@@ -160,13 +254,22 @@ final class SoundCloudAPI: ObservableObject {
                     likedTrackIds.insert(track.id)
                 }
             }
+            if nextHref == nil {
+                self.likedTracks = tracks
+                self.likedNextHref = next
+            } else {
+                let existingIds = Set(self.likedTracks.map { $0.id })
+                let newUnique = tracks.filter { !existingIds.contains($0.id) }
+                self.likedTracks.append(contentsOf: newUnique)
+                self.likedNextHref = next
+            }
             return (tracks, next)
         } catch {
             return ([], nil)
         }
     }
 
-    // MARK: - Playlists & Albums
+    // MARK: - Playlists & Albums (With Automatic Missing Cover Artwork Hydration!)
     func fetchLibraryPlaylistsAndAlbums() async -> (playlists: [SCPlaylist], albums: [SCPlaylist]) {
         do {
             let data = try await requestData(urlString: "https://api-v2.soundcloud.com/me/library/all?limit=100")
@@ -187,9 +290,228 @@ final class SoundCloudAPI: ObservableObject {
                     }
                 }
             }
+
+            // Hydrate cover artwork for user playlists whose artwork_url is nil and first track is a stub
+            await hydrateMissingPlaylistArtwork(for: playlists + albums)
+
+            self.userPlaylists = playlists
+            self.userAlbums = albums
             return (playlists, albums)
         } catch {
             return ([], [])
+        }
+    }
+
+    private func hydrateMissingPlaylistArtwork(for lists: [SCPlaylist]) async {
+        var playlistToFirstTrackId: [Int: Int] = [:]
+        for pl in lists {
+            if let directArt = pl.artworkUrl, !directArt.isEmpty {
+                playlistArtworkCache[pl.id] = directArt
+                continue
+            }
+            if let nonStubArt = pl.tracks?.first(where: { ($0.artworkUrl ?? "").isEmpty == false })?.artworkUrl {
+                playlistArtworkCache[pl.id] = nonStubArt
+                continue
+            }
+            if let firstStubId = pl.tracks?.first?.id {
+                playlistToFirstTrackId[pl.id] = firstStubId
+            }
+        }
+
+        let uniqueTrackIds = Array(Set(playlistToFirstTrackId.values))
+        guard !uniqueTrackIds.isEmpty else { return }
+
+        var trackArtMap: [Int: String] = [:]
+        let batchSize = 50
+        var idx = 0
+        while idx < uniqueTrackIds.count {
+            let end = min(idx + batchSize, uniqueTrackIds.count)
+            let batch = uniqueTrackIds[idx..<end].map(String.init).joined(separator: ",")
+            idx = end
+            if let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/tracks?ids=\(batch)"),
+               let loaded = try? decoder.decode([SCTrack].self, from: data) {
+                for t in loaded {
+                    if let art = t.rawArtwork, !art.isEmpty {
+                        trackArtMap[t.id] = art
+                    }
+                }
+            }
+        }
+
+        for (plId, trackId) in playlistToFirstTrackId {
+            if let art = trackArtMap[trackId] {
+                playlistArtworkCache[plId] = art
+            }
+        }
+    }
+
+    // MARK: - Create Playlist / Add & Remove Tracks / Sync Playlist Image with SoundCloud
+    func createPlaylist(
+        title: String,
+        isPrivate: Bool,
+        initialTrack: SCTrack? = nil,
+        coverImageData: Data? = nil
+    ) async -> SCPlaylist? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        var playlistPayload: [String: Any] = [
+            "title": trimmed,
+            "sharing": isPrivate ? "private" : "public"
+        ]
+        if let track = initialTrack {
+            playlistPayload["tracks"] = [track.id]
+        } else {
+            playlistPayload["tracks"] = []
+        }
+
+        let body: [String: Any] = ["playlist": playlistPayload]
+
+        do {
+            let data = try await requestData(
+                urlString: "https://api-v2.soundcloud.com/playlists",
+                method: "POST",
+                jsonBody: body
+            )
+            let created = try decoder.decode(SCPlaylist.self, from: data)
+
+            if let trackArt = initialTrack?.rawArtwork, !trackArt.isEmpty {
+                playlistArtworkCache[created.id] = trackArt
+            }
+
+            if let imgData = coverImageData {
+                _ = await uploadPlaylistArtwork(playlistId: created.id, imageData: imgData)
+            }
+
+            if !userPlaylists.contains(where: { $0.id == created.id }) {
+                userPlaylists.insert(created, at: 0)
+            }
+            showToast("Created \"\(trimmed)\" on SoundCloud")
+
+            // Background sync to fetch full canonical playlist object
+            Task {
+                _ = await fetchLibraryPlaylistsAndAlbums()
+            }
+            return created
+        } catch {
+            self.lastError = error.localizedDescription
+            showToast("Could not create playlist: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func addTrack(_ track: SCTrack, to playlist: SCPlaylist) async -> Bool {
+        let existing = await fetchFullPlaylistTracks(playlistId: playlist.id)
+        var trackIds = existing.tracks.map { $0.id }
+        if trackIds.contains(track.id) {
+            showToast("Already in \"\(playlist.displayTitle)\"")
+            return true
+        }
+        trackIds.append(track.id)
+
+        let body: [String: Any] = [
+            "playlist": [
+                "tracks": trackIds
+            ]
+        ]
+
+        do {
+            let data = try await requestData(
+                urlString: "https://api-v2.soundcloud.com/playlists/\(playlist.id)",
+                method: "PUT",
+                jsonBody: body
+            )
+            if let updated = try? decoder.decode(SCPlaylist.self, from: data),
+               let idx = userPlaylists.firstIndex(where: { $0.id == updated.id }) {
+                userPlaylists[idx] = updated
+            }
+            if playlistArtworkCache[playlist.id] == nil, let art = track.rawArtwork {
+                playlistArtworkCache[playlist.id] = art
+            }
+            showToast("Added to \"\(playlist.displayTitle)\"")
+            return true
+        } catch {
+            self.lastError = error.localizedDescription
+            showToast("Failed to sync playlist update")
+            return false
+        }
+    }
+
+    func removeTrack(trackId: Int, from playlist: SCPlaylist) async -> Bool {
+        let existing = await fetchFullPlaylistTracks(playlistId: playlist.id)
+        let updatedIds = existing.tracks.map { $0.id }.filter { $0 != trackId }
+
+        let body: [String: Any] = [
+            "playlist": [
+                "tracks": updatedIds
+            ]
+        ]
+
+        do {
+            let data = try await requestData(
+                urlString: "https://api-v2.soundcloud.com/playlists/\(playlist.id)",
+                method: "PUT",
+                jsonBody: body
+            )
+            if let updated = try? decoder.decode(SCPlaylist.self, from: data),
+               let idx = userPlaylists.firstIndex(where: { $0.id == updated.id }) {
+                userPlaylists[idx] = updated
+            }
+            showToast("Removed from \"\(playlist.displayTitle)\"")
+            return true
+        } catch {
+            self.lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Saves a crisp JPEG locally for instant UI updates AND syncs the cover image to SoundCloud!
+    func uploadPlaylistArtwork(playlistId: Int, imageData: Data) async -> Bool {
+        let compressed: Data
+        if let uiImg = UIImage(data: imageData) {
+            let maxDim: CGFloat = 1000
+            let scale = min(1.0, maxDim / max(uiImg.size.width, uiImg.size.height))
+            let newSize = CGSize(width: uiImg.size.width * scale, height: uiImg.size.height * scale)
+            let renderer = UIGraphicsImageRenderer(size: newSize)
+            let resized = renderer.image { _ in uiImg.draw(in: CGRect(origin: .zero, size: newSize)) }
+            compressed = resized.jpegData(compressionQuality: 0.86) ?? imageData
+        } else {
+            compressed = imageData
+        }
+
+        // Persist locally immediately for instant feedback
+        let fileURL = coversDirectory.appendingPathComponent("playlist_\(playlistId).jpg")
+        try? compressed.write(to: fileURL, options: .atomic)
+        localPlaylistCoverURLs[playlistId] = fileURL
+
+        // Sync cover image directly to SoundCloud API v2
+        let base64 = compressed.base64EncodedString()
+        let body: [String: Any] = [
+            "playlist": [
+                "artwork_data": "data:image/jpeg;base64,\(base64)"
+            ]
+        ]
+
+        do {
+            let data = try await requestData(
+                urlString: "https://api-v2.soundcloud.com/playlists/\(playlistId)",
+                method: "PUT",
+                jsonBody: body
+            )
+            if let updated = try? decoder.decode(SCPlaylist.self, from: data) {
+                if let remoteArt = updated.artworkUrl, !remoteArt.isEmpty {
+                    playlistArtworkCache[playlistId] = remoteArt
+                }
+                if let idx = userPlaylists.firstIndex(where: { $0.id == updated.id }) {
+                    userPlaylists[idx] = updated
+                }
+            }
+            showToast("Synced playlist artwork to SoundCloud")
+            return true
+        } catch {
+            // Keep local cover cached even if SoundCloud rejects artwork upload on a non-owned playlist
+            showToast("Saved playlist cover image")
+            return false
         }
     }
 
@@ -200,6 +522,9 @@ final class SoundCloudAPI: ObservableObject {
             let playlist = try decoder.decode(SCPlaylist.self, from: data)
             let rawTracks = playlist.tracks ?? []
             let hydrated = await hydrateTracks(rawTracks)
+            if playlist.artworkUrl == nil, let firstArt = hydrated.first?.rawArtwork {
+                playlistArtworkCache[playlist.id] = firstArt
+            }
             return (playlist, hydrated)
         } catch {
             return (nil, [])
@@ -243,7 +568,6 @@ final class SoundCloudAPI: ObservableObject {
             var items: [SCFeedItem] = []
             for entry in collection {
                 let type = entry["type"] as? String ?? "track"
-                // Skip promoted/ad stream items completely!
                 if type.contains("promoted") || type.contains("ad") { continue }
                 let createdAt = entry["created_at"] as? String ?? ""
                 var reposter: SCUser?
@@ -327,6 +651,7 @@ final class SoundCloudAPI: ObservableObject {
                 urlString: "https://api-v2.soundcloud.com/me/followings/\(userId)",
                 method: currentlyFollowing ? "DELETE" : "PUT"
             )
+            showToast(currentlyFollowing ? "Unfollowed artist" : "Following artist on SoundCloud")
             return !currentlyFollowing
         } catch {
             if currentlyFollowing {
@@ -498,15 +823,68 @@ final class SoundCloudAPI: ObservableObject {
         }
     }
 
-    // MARK: - Like / Unlike
+    // MARK: - Two-Way Like / Unlike Synced Directly to SoundCloud
+    func toggleLike(track: SCTrack) async -> Bool {
+        if currentUser == nil {
+            _ = await fetchMe()
+        }
+        guard let userId = currentUser?.id else { return likedTrackIds.contains(track.id) }
+        let currentlyLiked = likedTrackIds.contains(track.id)
+        let method = currentlyLiked ? "DELETE" : "PUT"
+
+        // Optimistic update across both likedTrackIds AND likedTracks!
+        let previousLikedTracks = likedTracks
+        if currentlyLiked {
+            likedTrackIds.remove(track.id)
+            likedTracks.removeAll { $0.id == track.id }
+        } else {
+            likedTrackIds.insert(track.id)
+            likedTracks.removeAll { $0.id == track.id }
+            likedTracks.insert(track, at: 0)
+        }
+
+        do {
+            _ = try await requestData(
+                urlString: "https://api-v2.soundcloud.com/users/\(userId)/track_likes/\(track.id)",
+                method: method
+            )
+            showToast(currentlyLiked ? "Removed from SoundCloud likes" : "Liked & synced to SoundCloud")
+            return !currentlyLiked
+        } catch {
+            // Fallback endpoint (/me/track_likes/{id})
+            do {
+                _ = try await requestData(
+                    urlString: "https://api-v2.soundcloud.com/me/track_likes/\(track.id)",
+                    method: method
+                )
+                showToast(currentlyLiked ? "Removed from SoundCloud likes" : "Liked & synced to SoundCloud")
+                return !currentlyLiked
+            } catch {
+                // Revert optimistic state on genuine failure
+                if currentlyLiked {
+                    likedTrackIds.insert(track.id)
+                } else {
+                    likedTrackIds.remove(track.id)
+                }
+                likedTracks = previousLikedTracks
+                lastError = error.localizedDescription
+                showToast("Could not sync like to SoundCloud")
+                return currentlyLiked
+            }
+        }
+    }
+
     func toggleLike(trackId: Int) async -> Bool {
+        if let existing = likedTracks.first(where: { $0.id == trackId }) {
+            return await toggleLike(track: existing)
+        }
         guard let userId = currentUser?.id else { return likedTrackIds.contains(trackId) }
         let currentlyLiked = likedTrackIds.contains(trackId)
         let method = currentlyLiked ? "DELETE" : "PUT"
 
-        // Optimistic UI update
         if currentlyLiked {
             likedTrackIds.remove(trackId)
+            likedTracks.removeAll { $0.id == trackId }
         } else {
             likedTrackIds.insert(trackId)
         }
@@ -516,9 +894,9 @@ final class SoundCloudAPI: ObservableObject {
                 urlString: "https://api-v2.soundcloud.com/users/\(userId)/track_likes/\(trackId)",
                 method: method
             )
+            showToast(currentlyLiked ? "Removed from SoundCloud likes" : "Liked & synced to SoundCloud")
             return !currentlyLiked
         } catch {
-            // Revert on failure
             if currentlyLiked {
                 likedTrackIds.insert(trackId)
             } else {
@@ -533,7 +911,6 @@ final class SoundCloudAPI: ObservableObject {
         var transcodings = track.media?.transcodings ?? []
         var trackAuth = track.trackAuthorization
 
-        // If track came from a lightweight object missing transcodings, fetch full track first
         if transcodings.isEmpty {
             if let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/tracks/\(track.id)"),
                let fullTrack = try? decoder.decode(SCTrack.self, from: data) {
@@ -542,17 +919,12 @@ final class SoundCloudAPI: ObservableObject {
             }
         }
 
-        // Prefer unencrypted HLS (native AVPlayer gold standard) -> progressive MP3 -> any HLS
         let candidates = transcodings.filter { t in
             guard let proto = t.format?.protocolName else { return false }
             return proto == "hls" || proto == "progressive"
         }
 
-        let ordered = candidates.sorted { a, b in
-            let aScore = scoreTranscoding(a)
-            let bScore = scoreTranscoding(b)
-            return aScore > bScore
-        }
+        let ordered = candidates.sorted { scoreTranscoding($0) > scoreTranscoding($1) }
 
         for transcoding in ordered {
             guard var baseUrl = transcoding.url, !baseUrl.isEmpty else { continue }

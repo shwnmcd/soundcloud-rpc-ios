@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct NativeFeedView: View {
+    @Environment(\.scTheme) private var theme
     @EnvironmentObject var api: SoundCloudAPI
     @EnvironmentObject var player: AudioPlayerService
 
@@ -19,7 +20,7 @@ struct NativeFeedView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Feed")
                         .font(.system(size: 24, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(theme.textPrimary)
                         .padding(.horizontal, 14)
                         .padding(.top, 8)
                         .padding(.bottom, 10)
@@ -27,13 +28,13 @@ struct NativeFeedView: View {
                     if isLoading && items.isEmpty {
                         HStack {
                             Spacer()
-                            ProgressView().tint(.orange).padding(.vertical, 50)
+                            ProgressView().tint(theme.accent).padding(.vertical, 50)
                             Spacer()
                         }
                     } else if items.isEmpty {
                         Text("Follow artists to see their latest tracks and reposts here.")
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(theme.textSecondary)
                             .padding(24)
                     } else {
                         LazyVStack(alignment: .leading, spacing: 2) {
@@ -47,7 +48,7 @@ struct NativeFeedView: View {
                                                 Text("\(reposter.displayName) reposted")
                                                     .font(.system(size: 11.5))
                                             }
-                                            .foregroundColor(Color(white: 0.55))
+                                            .foregroundColor(theme.textTertiary)
                                             .padding(.top, 4)
                                         }
 
@@ -59,7 +60,7 @@ struct NativeFeedView: View {
                                                 player.play(track: track, in: playableTracks)
                                             },
                                             onToggleLike: {
-                                                Task { _ = await api.toggleLike(trackId: track.id) }
+                                                Task { _ = await api.toggleLike(track: track) }
                                             },
                                             onOpenArtist: { user in
                                                 selectedArtist = user
@@ -74,6 +75,7 @@ struct NativeFeedView: View {
                                         SCPlaylistRowView(playlist: playlist)
                                             .padding(.horizontal, 14)
                                     }
+                                    .buttonStyle(SpringPressButtonStyle(pressedScale: 0.98))
                                 }
                             }
 
@@ -83,7 +85,7 @@ struct NativeFeedView: View {
                                 } label: {
                                     Text("Load More")
                                         .font(.caption.weight(.semibold))
-                                        .foregroundColor(.orange)
+                                        .foregroundColor(theme.accent)
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 14)
                                 }
@@ -94,7 +96,7 @@ struct NativeFeedView: View {
                     Spacer(minLength: 140)
                 }
             }
-            .background(Color(red: 0.067, green: 0.067, blue: 0.067).ignoresSafeArea())
+            .background(theme.bg.ignoresSafeArea())
             .refreshable {
                 await loadFeed()
             }
@@ -117,9 +119,11 @@ struct NativeFeedView: View {
     private func loadFeed() async {
         isLoading = true
         let res = await api.fetchFeed()
-        self.items = res.items
-        self.nextHref = res.nextHref
-        isLoading = false
+        withAnimation(.easeOut(duration: 0.25)) {
+            self.items = res.items
+            self.nextHref = res.nextHref
+            isLoading = false
+        }
     }
 
     private func loadMore() async {

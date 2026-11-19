@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct NativeSearchView: View {
+    @Environment(\.scTheme) private var theme
     @EnvironmentObject var api: SoundCloudAPI
     @EnvironmentObject var player: AudioPlayerService
 
@@ -20,23 +21,23 @@ struct NativeSearchView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Search")
                         .font(.system(size: 24, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(theme.textPrimary)
                         .padding(.horizontal, 14)
                         .padding(.top, 8)
 
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(Color(white: 0.6))
+                            .foregroundColor(theme.textSecondary)
 
                         TextField(
                             "",
                             text: $query,
                             prompt: Text("Search tracks, artists, playlists...")
-                                .foregroundColor(Color(white: 0.55))
+                                .foregroundColor(theme.textTertiary)
                         )
                         .font(.system(size: 15))
-                        .foregroundColor(.white)
+                        .foregroundColor(theme.textPrimary)
                         .submitLabel(.search)
                         .focused($isSearchFocused)
                         .onSubmit {
@@ -45,39 +46,46 @@ struct NativeSearchView: View {
 
                         if !query.isEmpty {
                             Button {
-                                query = ""
-                                tracks = []
-                                users = []
-                                playlists = []
+                                withAnimation(.easeOut(duration: 0.18)) {
+                                    query = ""
+                                    tracks = []
+                                    users = []
+                                    playlists = []
+                                }
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(Color(white: 0.55))
+                                    .foregroundColor(theme.textTertiary)
                             }
                         }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
-                    .background(Color(white: 0.14))
+                    .background(theme.surfaceElevated)
                     .clipShape(Capsule())
+                    .overlay(Capsule().stroke(theme.pillStroke, lineWidth: 0.7))
                     .padding(.horizontal, 14)
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(SearchFilter.allCases) { item in
+                                let selected = filter == item
                                 Button {
-                                    filter = item
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
+                                        filter = item
+                                    }
                                     if !query.isEmpty {
                                         Task { await performSearch() }
                                     }
                                 } label: {
                                     Text(item.rawValue)
                                         .font(.system(size: 12.5, weight: .semibold))
-                                        .foregroundColor(filter == item ? .black : .white)
+                                        .foregroundColor(selected ? theme.playCircleFg : theme.textPrimary)
                                         .padding(.horizontal, 13)
                                         .padding(.vertical, 6)
-                                        .background(filter == item ? Color.white : Color(white: 0.15))
+                                        .background(selected ? theme.playCircleBg : theme.surfaceElevated)
                                         .clipShape(Capsule())
                                 }
+                                .buttonStyle(SpringPressButtonStyle(pressedScale: 0.94))
                             }
                         }
                         .padding(.horizontal, 14)
@@ -87,15 +95,15 @@ struct NativeSearchView: View {
                 // Results
                 ScrollView(showsIndicators: false) {
                     if isSearching {
-                        ProgressView().tint(.orange).padding(.top, 50)
+                        ProgressView().tint(theme.accent).padding(.top, 50)
                     } else if tracks.isEmpty && users.isEmpty && playlists.isEmpty {
                         VStack(spacing: 10) {
                             Image(systemName: "magnifyingglass")
                                 .font(.system(size: 32))
-                                .foregroundColor(Color(white: 0.35))
+                                .foregroundColor(theme.textTertiary.opacity(0.65))
                             Text(query.isEmpty ? "Search SoundCloud ad-free" : "No results found")
                                 .font(.subheadline)
-                                .foregroundColor(Color(white: 0.55))
+                                .foregroundColor(theme.textSecondary)
                         }
                         .padding(.top, 70)
                     } else {
@@ -113,20 +121,21 @@ struct NativeSearchView: View {
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text(user.displayName)
                                                     .font(.system(size: 15, weight: .semibold))
-                                                    .foregroundColor(.white)
+                                                    .foregroundColor(theme.textPrimary)
                                                     .lineLimit(1)
                                                 Text("\(user.followersCount ?? 0) Followers")
                                                     .font(.system(size: 12.5))
-                                                    .foregroundColor(Color(white: 0.6))
+                                                    .foregroundColor(theme.textSecondary)
                                             }
                                             Spacer()
                                             Image(systemName: "chevron.right")
                                                 .font(.caption)
-                                                .foregroundColor(Color(white: 0.45))
+                                                .foregroundColor(theme.textTertiary)
                                         }
                                         .padding(.vertical, 6)
                                         .padding(.horizontal, 14)
                                     }
+                                    .buttonStyle(SpringPressButtonStyle(pressedScale: 0.98))
                                 }
                             }
 
@@ -140,7 +149,7 @@ struct NativeSearchView: View {
                                         player.play(track: track, in: tracks)
                                     },
                                     onToggleLike: {
-                                        Task { _ = await api.toggleLike(trackId: track.id) }
+                                        Task { _ = await api.toggleLike(track: track) }
                                     },
                                     onOpenArtist: { user in
                                         selectedArtist = user
@@ -157,6 +166,7 @@ struct NativeSearchView: View {
                                     SCPlaylistRowView(playlist: pl)
                                         .padding(.horizontal, 14)
                                 }
+                                .buttonStyle(SpringPressButtonStyle(pressedScale: 0.98))
                             }
                         }
                     }
@@ -164,7 +174,7 @@ struct NativeSearchView: View {
                     Spacer(minLength: 140)
                 }
             }
-            .background(Color(red: 0.067, green: 0.067, blue: 0.067).ignoresSafeArea())
+            .background(theme.bg.ignoresSafeArea())
             .navigationDestination(isPresented: Binding(
                 get: { selectedArtist != nil },
                 set: { if !$0 { selectedArtist = nil } }
@@ -180,9 +190,11 @@ struct NativeSearchView: View {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         isSearching = true
         let res = await api.search(query: query, filter: filter)
-        self.tracks = res.tracks
-        self.users = res.users
-        self.playlists = res.playlists
-        isSearching = false
+        withAnimation(.easeOut(duration: 0.24)) {
+            self.tracks = res.tracks
+            self.users = res.users
+            self.playlists = res.playlists
+            isSearching = false
+        }
     }
 }

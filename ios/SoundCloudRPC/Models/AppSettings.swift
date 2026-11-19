@@ -5,6 +5,21 @@ import SwiftUI
 final class AppSettings: ObservableObject {
     private let defaults = UserDefaults.standard
 
+    // Appearance & Playback Style
+    @Published var themeMode: AppThemeMode {
+        didSet {
+            defaults.set(themeMode.rawValue, forKey: "themeMode")
+            let shouldBeDark = (themeMode != .light)
+            if darkMode != shouldBeDark { darkMode = shouldBeDark }
+        }
+    }
+    @Published var accentPreset: AppAccentPreset {
+        didSet { defaults.set(accentPreset.rawValue, forKey: "accentPreset") }
+    }
+    @Published var playbackStyle: PlaybackStyle {
+        didSet { defaults.set(playbackStyle.rawValue, forKey: "playbackStyle") }
+    }
+
     // Client & WebView
     @Published var darkMode: Bool {
         didSet { defaults.set(darkMode, forKey: "darkMode") }
@@ -83,7 +98,15 @@ final class AppSettings: ObservableObject {
     }
 
     init() {
-        self.darkMode = defaults.object(forKey: "darkMode") as? Bool ?? true
+        let initialDark = defaults.object(forKey: "darkMode") as? Bool ?? true
+        let savedThemeRaw = defaults.string(forKey: "themeMode") ?? (initialDark ? AppThemeMode.dark.rawValue : AppThemeMode.light.rawValue)
+        self.themeMode = AppThemeMode(rawValue: savedThemeRaw) ?? .dark
+        let savedAccentRaw = defaults.string(forKey: "accentPreset") ?? AppAccentPreset.soundcloudOrange.rawValue
+        self.accentPreset = AppAccentPreset(rawValue: savedAccentRaw) ?? .soundcloudOrange
+        let savedStyleRaw = defaults.string(forKey: "playbackStyle") ?? PlaybackStyle.vinyl.rawValue
+        self.playbackStyle = PlaybackStyle(rawValue: savedStyleRaw) ?? .vinyl
+
+        self.darkMode = initialDark
         self.adBlockerEnabled = defaults.object(forKey: "adBlockerEnabled") as? Bool ?? true
         self.mobileAppLayout = defaults.object(forKey: "mobileAppLayout") as? Bool ?? true
         self.desktopMode = defaults.object(forKey: "desktopMode") as? Bool ?? true

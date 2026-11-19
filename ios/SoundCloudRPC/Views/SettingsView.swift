@@ -1,8 +1,10 @@
 import SwiftUI
+import UIKit
 import WebKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scTheme) private var theme
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var authBridge: SoundCloudAuthBridge
     @EnvironmentObject var api: SoundCloudAPI
@@ -18,8 +20,115 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // MARK: - SoundCloud Account
-                Section("SoundCloud Account") {
+                // MARK: - Appearance, Dark/Light Theme & Playback Style
+                Section("Appearance & Playback Style") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Theme")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                            ForEach(AppThemeMode.allCases) { mode in
+                                let selected = settings.themeMode == mode
+                                Button {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        settings.themeMode = mode
+                                    }
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: mode.icon)
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(selected ? .white : theme.accent)
+                                        Text(mode.displayName)
+                                            .font(.system(size: 13.5, weight: .semibold))
+                                            .foregroundColor(selected ? .white : .primary)
+                                            .lineLimit(1)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .background(selected ? theme.accent : Color.secondary.opacity(0.14))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Accent Color")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+
+                        HStack(spacing: 12) {
+                            ForEach(AppAccentPreset.allCases) { preset in
+                                let selected = settings.accentPreset == preset
+                                Button {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                                        settings.accentPreset = preset
+                                    }
+                                } label: {
+                                    ZStack {
+                                        Circle()
+                                            .fill(preset.color)
+                                            .frame(width: 30, height: 30)
+                                        if selected {
+                                            Circle()
+                                                .stroke(Color.primary, lineWidth: 2.5)
+                                                .frame(width: 37, height: 37)
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 12, weight: .bold))
+                                                .foregroundColor(.white)
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Now Playing Style")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+
+                        HStack(spacing: 8) {
+                            ForEach(PlaybackStyle.allCases) { style in
+                                let selected = settings.playbackStyle == style
+                                Button {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
+                                        settings.playbackStyle = style
+                                    }
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        Image(systemName: style.icon)
+                                            .font(.system(size: 20, weight: .semibold))
+                                        Text(style.displayName)
+                                            .font(.system(size: 11.5, weight: .semibold))
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.85)
+                                    }
+                                    .foregroundColor(selected ? .white : .primary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(selected ? theme.accent : Color.secondary.opacity(0.14))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // MARK: - SoundCloud Account & Sync
+                Section("SoundCloud Account & Sync") {
                     if let user = api.currentUser {
                         HStack(spacing: 12) {
                             HDArtworkView(rawUrl: user.avatarUrl, cornerRadius: 20)
@@ -27,9 +136,21 @@ struct SettingsView: View {
                                 .clipShape(Circle())
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(user.displayName).font(.subheadline.weight(.semibold))
-                                Text("Native Ad-Free Streaming Active")
+                                Text("\(api.likedTracks.count) synced likes · \(api.userPlaylists.count) playlists")
                                     .font(.caption2)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Button {
+                            Task { await api.syncLibrary(showConfirmationToast: true) }
+                        } label: {
+                            HStack {
+                                Label("Sync Likes, Playlists & Images Now", systemImage: "arrow.triangle.2.circlepath")
+                                Spacer()
+                                if api.isSyncingLibrary {
+                                    ProgressView().tint(theme.accent)
+                                }
                             }
                         }
 
@@ -54,7 +175,7 @@ struct SettingsView: View {
                 // MARK: - Playback & Client
                 Section(settings.t("client")) {
                     HStack {
-                        Image(systemName: "shield.checkered").foregroundColor(.orange)
+                        Image(systemName: "shield.checkered").foregroundColor(theme.accent)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Native Ad-Free Audio Engine")
                             Text("Direct AVPlayer HLS streaming — zero audio or banner ads")
@@ -64,7 +185,7 @@ struct SettingsView: View {
                         Spacer()
                         Text("ON")
                             .font(.caption.bold())
-                            .foregroundColor(.orange)
+                            .foregroundColor(theme.accent)
                     }
 
                     Toggle(isOn: $settings.trackParserEnabled) {
@@ -170,10 +291,10 @@ struct SettingsView: View {
                             Spacer()
                             Text("\(Int(settings.webhookTriggerPercentage))%")
                                 .monospacedDigit()
-                                .foregroundColor(.orange)
+                                .foregroundColor(theme.accent)
                         }
                         Slider(value: $settings.webhookTriggerPercentage, in: 0...100, step: 5)
-                            .tint(.orange)
+                            .tint(theme.accent)
                     }
 
                     Button {
@@ -196,7 +317,7 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("App", value: "SoundCloud RPC v2.3 (Native iOS & iPadOS)")
+                    LabeledContent("App", value: "SoundCloud RPC v2.4 (Native iOS & iPadOS)")
                     LabeledContent("Based on", value: "richardhbtz/soundcloud-rpc (MIT)")
                 }
             }
