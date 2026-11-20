@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class SCUser(
     val id: Long = 0,
-    val username: String = "",
+    val username: String? = null,
     @SerializedName("full_name") val fullName: String? = null,
     @SerializedName("avatar_url") val avatarUrl: String? = null,
     @SerializedName("permalink_url") val permalinkUrl: String? = null,
@@ -12,7 +12,10 @@ data class SCUser(
     @SerializedName("followings_count") val followingsCount: Int? = null,
     val visuals: SCVisuals? = null
 ) {
-    val displayName: String get() = username.ifBlank { fullName ?: "Artist" }
+    val displayName: String
+        get() = username?.takeIf { it.isNotBlank() }
+            ?: fullName?.takeIf { it.isNotBlank() }
+            ?: "Artist"
     val bannerUrl: String? get() = visuals?.visuals?.firstOrNull()?.visualUrl
 }
 

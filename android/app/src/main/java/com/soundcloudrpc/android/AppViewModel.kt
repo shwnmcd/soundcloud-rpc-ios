@@ -18,6 +18,7 @@ import com.soundcloudrpc.android.data.JamSessionManager
 import com.soundcloudrpc.android.data.SoundCloudApi
 import com.soundcloudrpc.android.model.*
 import com.soundcloudrpc.android.player.PlaybackService
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +29,7 @@ enum class RepeatMode { NONE, ALL, ONE }
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     val prefs = AppPrefs(application)
-    val api = SoundCloudApi(prefs)
+    val api = SoundCloudApi(prefs, application)
     val integrations = IntegrationsService(prefs)
 
     private var mediaController: MediaController? = null
@@ -69,6 +70,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isLoadingHome = MutableStateFlow(false)
     val isLoadingHome: StateFlow<Boolean> = _isLoadingHome.asStateFlow()
+
+    private val _isLoadingFeed = MutableStateFlow(false)
+    val isLoadingFeed: StateFlow<Boolean> = _isLoadingFeed.asStateFlow()
 
     // Player state
     private val _currentTrack = MutableStateFlow<SCTrack?>(null)
@@ -257,45 +261,62 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _isLoggedIn.value = false
     }
 
+    private fun rebuildQuickCards(pls: List<SCPlaylist>, fol: List<SCUser>) {
+        val cards = mutableListOf<SCQuickCard>()
+        pls.firstOrNull()?.let {
+            cards.add(SCQuickCard("pl-${it.id}", it.displayTitle, it.creatorName, it.rawArtwork, false, playlist = it))
+        }
+        fol.firstOrNull()?.let {
+            cards.add(SCQuickCard("u-${it.id}", it.displayName, "Artist", it.avatarUrl, true, user = it))
+        }
+        pls.drop(1).take(4 - cards.size).forEach {
+            cards.add(SCQuickCard("pl-${it.id}", it.displayTitle, it.creatorName, it.rawArtwork, false, playlist = it))
+        }
+        _quickCards.value = cards.take(4)
+    }
+
     fun refreshAll() {
+        _isLoadingHome.value = true
+        _isLoadingFeed.value = true
+
+        // Launch all independent SoundCloud requests in parallel for near-instant progressive loading!
         viewModelScope.launch {
-            _isLoadingHome.value = true
-            val me = api.fetchMe()
-            _currentUser.value = me
             val shelves = api.fetchHomeSelections()
             _homeShelves.value = shelves
+            _isLoadingHome.value = false
+        }
 
+        viewModelScope.launch {
+            val (feedItems, _) = api.fetchFeed()
+            _feed.value = feedItems
+            _isLoadingFeed.value = false
+        }
+
+        viewModelScope.launch {
             val (pls, albs) = api.fetchLibraryPlaylistsAndAlbums()
             _playlists.value = pls
             _albums.value = albs
+            rebuildQuickCards(pls, _following.value)
+        }
 
-            val hist = api.fetchHistory()
-            _history.value = hist
+        viewModelScope.launch {
+            _history.value = api.fetchHistory()
+        }
 
-            val (feedItems, _) = api.fetchFeed()
-            _feed.value = feedItems
-
+        viewModelScope.launch {
+            val me = api.fetchMe()
+            _currentUser.value = me
             if (me != null) {
-                val (likedTracks, _) = api.fetchLikes(me.id, limit = 60)
+                val likesJob = async { api.fetchLikes(me.id, limit = 60) }
+                val folJob = async { api.fetchFollowing(me.id) }
+                val (likedTracks, _) = likesJob.await()
                 _likes.value = likedTracks
                 _likedIds.value = likedTracks.map { it.id }.toSet()
 
-                val fol = api.fetchFollowing(me.id)
+                val fol = folJob.await()
                 _following.value = fol
-
-                val cards = mutableListOf<SCQuickCard>()
-                pls.firstOrNull()?.let {
-                    cards.add(SCQuickCard("pl-${it.id}", it.displayTitle, it.creatorName, it.rawArtwork, false, playlist = it))
-                }
-                fol.firstOrNull()?.let {
-                    cards.add(SCQuickCard("u-${it.id}", it.displayName, "Artist", it.avatarUrl, true, user = it))
-                }
-                pls.drop(1).take(4 - cards.size).forEach {
-                    cards.add(SCQuickCard("pl-${it.id}", it.displayTitle, it.creatorName, it.rawArtwork, false, playlist = it))
-                }
-                _quickCards.value = cards.take(4)
+                rebuildQuickCards(_playlists.value, fol)
             }
-            _isLoadingHome.value = false
         }
     }
 

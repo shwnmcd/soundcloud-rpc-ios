@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -207,8 +208,8 @@ fun HomeScreen(
             }
         }
 
-        // Horizontal Carousels
-        items(shelves, key = { it.id }) { shelf ->
+        // Horizontal Carousels (guaranteed-unique indexed keys prevent Compose duplicate-key crashes!)
+        itemsIndexed(shelves, key = { sIdx, shelf -> "shelf-$sIdx-${shelf.id}" }) { sIdx, shelf ->
             Column(modifier = Modifier.padding(top = 14.dp)) {
                 Text(
                     text = shelf.title,
@@ -221,7 +222,7 @@ fun HomeScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(shelf.playlists, key = { it.id }) { pl ->
+                    itemsIndexed(shelf.playlists, key = { pIdx, pl -> "shelf-$sIdx-pl-$pIdx-${pl.id}" }) { _, pl ->
                         Column(
                             modifier = Modifier
                                 .width(152.dp)
@@ -243,6 +244,7 @@ fun HomeScreen(
 @Composable
 fun FeedScreen(vm: AppViewModel, onNavigate: (DetailRoute) -> Unit) {
     val feed by vm.feed.collectAsState()
+    val isLoadingFeed by vm.isLoadingFeed.collectAsState()
     val current by vm.currentTrack.collectAsState()
     val likedIds by vm.likedIds.collectAsState()
     val playable = remember(feed) { feed.mapNotNull { it.track } }
@@ -255,15 +257,43 @@ fun FeedScreen(vm: AppViewModel, onNavigate: (DetailRoute) -> Unit) {
         contentPadding = PaddingValues(bottom = 160.dp)
     ) {
         item {
-            Text(
-                text = "Feed",
-                color = Color.White,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Feed",
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { vm.refreshAll() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh Feed", tint = Color.White.copy(alpha = 0.78f))
+                }
+            }
         }
-        items(feed, key = { it.id }) { item ->
+
+        if (isLoadingFeed && feed.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = SCOrange)
+                }
+            }
+        } else if (feed.isEmpty()) {
+            item {
+                Text(
+                    text = "Follow artists on SoundCloud to see their latest tracks and reposts here.",
+                    color = Color(0xFF9C9CA2),
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)
+                )
+            }
+        }
+
+        itemsIndexed(feed, key = { idx, item -> "feed-$idx-${item.id}" }) { _, item ->
             if (item.track != null) {
                 Column {
                     if (item.isRepost && item.reposter != null) {
@@ -358,7 +388,7 @@ fun SearchScreen(vm: AppViewModel, onNavigate: (DetailRoute) -> Unit) {
             }
         } else {
             LazyColumn(contentPadding = PaddingValues(bottom = 160.dp)) {
-                items(result.users, key = { "u-${it.id}" }) { artist ->
+                itemsIndexed(result.users, key = { idx, it -> "u-$idx-${it.id}" }) { _, artist ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -375,7 +405,7 @@ fun SearchScreen(vm: AppViewModel, onNavigate: (DetailRoute) -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color(0xFF85858A))
                     }
                 }
-                items(result.tracks, key = { "t-${it.id}" }) { t ->
+                itemsIndexed(result.tracks, key = { idx, it -> "t-$idx-${it.id}" }) { _, t ->
                     TrackRow(
                         track = t,
                         isCurrent = current?.id == t.id,
@@ -385,7 +415,7 @@ fun SearchScreen(vm: AppViewModel, onNavigate: (DetailRoute) -> Unit) {
                         onOpenArtist = { onNavigate(DetailRoute.ArtistProfile(it)) }
                     )
                 }
-                items(result.playlists, key = { "p-${it.id}" }) { pl ->
+                itemsIndexed(result.playlists, key = { idx, it -> "p-$idx-${it.id}" }) { _, pl ->
                     PlaylistRow(playlist = pl) { onNavigate(DetailRoute.PlaylistDetail(pl)) }
                 }
             }
@@ -465,7 +495,7 @@ fun LibraryHubScreen(vm: AppViewModel, onNavigate: (DetailRoute) -> Unit) {
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(history.take(15), key = { it.id }) { t ->
+                    itemsIndexed(history.take(15), key = { idx, t -> "hist-card-$idx-${t.id}" }) { _, t ->
                         Column(
                             modifier = Modifier
                                 .width(128.dp)
@@ -538,7 +568,7 @@ fun LikesScreen(vm: AppViewModel, onBack: () -> Unit, onNavigate: (DetailRoute) 
                     }
                 }
             }
-            items(filtered, key = { it.id }) { t ->
+            itemsIndexed(filtered, key = { idx, t -> "like-$idx-${t.id}" }) { _, t ->
                 TrackRow(
                     track = t,
                     isCurrent = current?.id == t.id,
@@ -586,7 +616,7 @@ fun PlaylistsListScreen(vm: AppViewModel, albumsOnly: Boolean, onBack: () -> Uni
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                 )
             }
-            items(filtered, key = { it.id }) { pl ->
+            itemsIndexed(filtered, key = { idx, pl -> "pl-$idx-${pl.id}" }) { _, pl ->
                 PlaylistRow(playlist = pl) { onNavigate(DetailRoute.PlaylistDetail(pl)) }
             }
         }
@@ -603,7 +633,7 @@ fun PlaylistDetailScreen(vm: AppViewModel, playlist: SCPlaylist, onBack: () -> U
 
     LaunchedEffect(playlist.id) {
         loading = true
-        val (loadedPl, loadedTracks) = vm.api.fetchFullPlaylistTracks(playlist.id)
+        val (loadedPl, loadedTracks) = vm.api.fetchFullPlaylistTracks(playlist.id, fallbackTracks = playlist.tracks)
         if (loadedPl != null) fullPl = loadedPl
         tracks = loadedTracks
         loading = false
@@ -667,7 +697,7 @@ fun PlaylistDetailScreen(vm: AppViewModel, playlist: SCPlaylist, onBack: () -> U
                     }
                 }
             } else {
-                items(tracks, key = { it.id }) { t ->
+                itemsIndexed(tracks, key = { idx, t -> "pl-tr-$idx-${t.id}" }) { _, t ->
                     TrackRow(
                         track = t,
                         isCurrent = current?.id == t.id,
@@ -750,7 +780,7 @@ fun ArtistProfileScreen(vm: AppViewModel, user: SCUser, onBack: () -> Unit, onNa
                     item {
                         Text("Playlists", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(p.playlists, key = { it.id }) { pl ->
+                            itemsIndexed(p.playlists, key = { idx, pl -> "ap-pl-$idx-${pl.id}" }) { _, pl ->
                                 Column(modifier = Modifier.width(146.dp).clickable { onNavigate(DetailRoute.PlaylistDetail(pl)) }) {
                                     HDArtwork(rawUrl = pl.rawArtwork, modifier = Modifier.size(146.dp), cornerRadius = 6.dp)
                                     Spacer(Modifier.height(5.dp))
@@ -762,19 +792,19 @@ fun ArtistProfileScreen(vm: AppViewModel, user: SCUser, onBack: () -> Unit, onNa
                 }
                 if (p.tracks.isNotEmpty()) {
                     item { Text("Tracks", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
-                    items(p.tracks.take(15), key = { "tr-${it.id}" }) { t ->
+                    itemsIndexed(p.tracks.take(15), key = { idx, it -> "tr-$idx-${it.id}" }) { _, t ->
                         TrackRow(t, current?.id == t.id, likedIds.contains(t.id), { vm.playTrack(t, p.tracks) }, { vm.toggleLike(t.id) })
                     }
                 }
                 if (p.reposts.isNotEmpty()) {
                     item { Text("Reposts", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
-                    items(p.reposts.take(15), key = { "rp-${it.id}" }) { t ->
+                    itemsIndexed(p.reposts.take(15), key = { idx, it -> "rp-$idx-${it.id}" }) { _, t ->
                         TrackRow(t, current?.id == t.id, likedIds.contains(t.id), { vm.playTrack(t, p.reposts) }, { vm.toggleLike(t.id) })
                     }
                 }
                 if (p.likes.isNotEmpty()) {
                     item { Text("Likes", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
-                    items(p.likes.take(15), key = { "lk-${it.id}" }) { t ->
+                    itemsIndexed(p.likes.take(15), key = { idx, it -> "lk-$idx-${it.id}" }) { _, t ->
                         TrackRow(t, current?.id == t.id, likedIds.contains(t.id), { vm.playTrack(t, p.likes) }, { vm.toggleLike(t.id) })
                     }
                 }
@@ -796,7 +826,7 @@ fun HistoryScreen(vm: AppViewModel, onBack: () -> Unit, onNavigate: (DetailRoute
             Text("Listening history", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
         LazyColumn(contentPadding = PaddingValues(bottom = 160.dp)) {
-            items(history, key = { it.id }) { t ->
+            itemsIndexed(history, key = { idx, t -> "hist-$idx-${t.id}" }) { _, t ->
                 TrackRow(t, current?.id == t.id, likedIds.contains(t.id), { vm.playTrack(t, history) }, { vm.toggleLike(t.id) }, { onNavigate(DetailRoute.ArtistProfile(it)) })
             }
         }
@@ -814,7 +844,7 @@ fun FollowingScreen(vm: AppViewModel, onBack: () -> Unit, onNavigate: (DetailRou
             Text("Following", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
         LazyColumn(contentPadding = PaddingValues(bottom = 160.dp)) {
-            items(users, key = { it.id }) { artist ->
+            itemsIndexed(users, key = { idx, artist -> "fol-$idx-${artist.id}" }) { _, artist ->
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable { onNavigate(DetailRoute.ArtistProfile(artist)) }.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -933,7 +963,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, onSignOut: () -> Unit) 
             }
 
             item {
-                Text("SoundCloud RPC v2.2 (Native Android) • Based on richardhbtz/soundcloud-rpc (MIT)", color = Color(0xFF707076), fontSize = 12.sp)
+                Text("SoundCloud RPC v2.5.2 (Native Android) • Based on richardhbtz/soundcloud-rpc (MIT)", color = Color(0xFF707076), fontSize = 12.sp)
                 Spacer(Modifier.height(100.dp))
             }
         }
