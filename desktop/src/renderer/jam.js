@@ -86,15 +86,15 @@ class DesktopJamManager {
     return `scrpc-jam-${hex.slice(0, 20)}`;
   }
 
-  static trackToRef(track) {
+  static trackToRef(track, compact = false) {
     if (!track) return null;
     return {
       id: Number(track.id),
-      title: track.title || 'Untitled Track',
-      artist: track.user?.username || track.user?.full_name || track.artist || 'Unknown Artist',
-      artworkUrl: track.artwork_url || track.user?.avatar_url || track.artworkUrl || null,
+      title: String(track.title || 'Untitled Track').slice(0, 72),
+      artist: String(track.user?.username || track.user?.full_name || track.artist || 'Unknown Artist').slice(0, 48),
+      artworkUrl: compact ? null : (track.artwork_url || track.user?.avatar_url || track.artworkUrl || null),
       durationMs: track.duration || track.durationMs || 0,
-      permalinkUrl: track.permalink_url || track.permalinkUrl || null
+      permalinkUrl: null
     };
   }
 
@@ -265,7 +265,8 @@ class DesktopJamManager {
 
   syncQueueFromPlayer() {
     const q = this.hooks.getQueue() || [];
-    this.sharedQueue = q.slice(0, 25).map((t) => DesktopJamManager.trackToRef(t)).filter(Boolean);
+    // Keep Jam state payload well under ntfy.sh's 4,096-byte message limit!
+    this.sharedQueue = q.slice(0, 6).map((t) => DesktopJamManager.trackToRef(t, true)).filter(Boolean);
   }
 
   async connectSocket() {

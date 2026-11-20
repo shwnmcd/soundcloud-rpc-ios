@@ -125,12 +125,18 @@ final class SoundCloudAuthBridge: NSObject, ObservableObject {
     func readCookiesFromWebKitStore() async {
         let store = WKWebsiteDataStore.default().httpCookieStore
         let cookies = await store.allCookies()
+        // Mirror all soundcloud.com cookies (including datadome & session) into URLSession's HTTPCookieStorage!
+        for c in cookies where c.domain.contains("soundcloud.com") {
+            HTTPCookieStorage.shared.setCookie(c)
+        }
         if let tokenCookie = cookies.first(where: {
             $0.name == "oauth_token" && $0.domain.contains("soundcloud.com") && !$0.value.isEmpty
         }) {
-            if self.oauthToken != tokenCookie.value {
-                self.oauthToken = tokenCookie.value
-                self.defaults.set(tokenCookie.value, forKey: "sc_cached_oauth_token")
+            let decoded = (tokenCookie.value.removingPercentEncoding ?? tokenCookie.value)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"' \n\r\t"))
+            if !decoded.isEmpty && self.oauthToken != decoded {
+                self.oauthToken = decoded
+                self.defaults.set(decoded, forKey: "sc_cached_oauth_token")
             }
         }
     }

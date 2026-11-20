@@ -28,13 +28,13 @@ struct JamTrackRef: Identifiable, Codable, Hashable {
     let durationMs: Int?
     let permalinkUrl: String?
 
-    init(from track: SCTrack) {
+    init(from track: SCTrack, compact: Bool = false) {
         self.id = track.id
-        self.title = track.displayTitle
-        self.artist = track.artistName
-        self.artworkUrl = track.rawArtwork
+        self.title = String(track.displayTitle.prefix(72))
+        self.artist = String(track.artistName.prefix(48))
+        self.artworkUrl = compact ? nil : track.rawArtwork
         self.durationMs = track.duration
-        self.permalinkUrl = track.permalinkUrl
+        self.permalinkUrl = nil
     }
 
     func toSCTrack() -> SCTrack {
@@ -416,7 +416,8 @@ final class JamSessionService: ObservableObject {
 
     private func refreshSharedQueueFromPlayer() {
         guard let player else { return }
-        sharedQueue = Array(player.queue.prefix(25)).map { JamTrackRef(from: $0) }
+        // Keep Jam state payload well under ntfy.sh's 4,096-byte message limit!
+        sharedQueue = Array(player.queue.prefix(6)).map { JamTrackRef(from: $0, compact: true) }
     }
 
     // MARK: - WebSocket Connection & Auto-Reconnect

@@ -337,7 +337,17 @@ class JamSessionManager(
 
     private suspend fun broadcastHostState() {
         if (!_isActive.value || !_isHost.value) return
-        val q = getQueue().take(25).map { JamTrackRef.from(it) }
+        // Keep Jam state payload well under ntfy.sh's 4,096-byte message limit!
+        val q = getQueue().take(6).map {
+            JamTrackRef(
+                id = it.id,
+                title = it.displayTitle.take(72),
+                artist = it.artistName.take(48),
+                artworkUrl = null,
+                durationMs = it.duration,
+                permalinkUrl = null
+            )
+        }
         _sharedQueue.value = q
         publishEvent(
             type = "state",

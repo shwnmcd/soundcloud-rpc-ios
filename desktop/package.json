@@ -1,6 +1,6 @@
 {
   "name": "soundcloud-s",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "SoundCloud S — ad-free SoundCloud desktop client with Discord Rich Presence, Group Jam & multiplayer games. Based on SoundCloud RPC by richardhbtz.",
   "main": "src/main.js",
   "author": "SoundCloud S (based on SoundCloud RPC by richardhbtz)",

@@ -84,7 +84,15 @@ function saveStore(store) {
 let store = { auth: { oauthToken: '', clientId: '' }, settings: { ...DEFAULT_SETTINGS } };
 const rpc = new DiscordRPCClient(DEFAULT_SETTINGS.discordClientId);
 const integrations = new IntegrationsService();
-const scApi = new SoundCloudDesktopAPI(() => store.auth);
+const scApi = new SoundCloudDesktopAPI(
+  () => store.auth,
+  (freshClientId) => {
+    if (freshClientId && freshClientId !== store.auth.clientId) {
+      store.auth.clientId = freshClientId;
+      saveStore(store);
+    }
+  }
+);
 
 // Register soundcloudrpc:// Jam invite deep links (shared with iOS & Android)
 if (process.defaultApp && process.argv.length >= 2) {
@@ -182,7 +190,10 @@ async function readSoundCloudCookie() {
   try {
     const cookies = await session.defaultSession.cookies.get({ domain: 'soundcloud.com', name: 'oauth_token' });
     const found = cookies.find((c) => c.value && c.value.length > 8);
-    return found ? found.value : '';
+    if (!found) return '';
+    let val = found.value.trim();
+    try { val = decodeURIComponent(val); } catch {}
+    return val.replace(/^["']|["']$/g, '').trim();
   } catch {
     return '';
   }
@@ -266,9 +277,12 @@ function attachClientIdSniffer() {
 function registerIPC() {
   ipcMain.handle('store:init', async () => {
     const cookieTok = await readSoundCloudCookie();
-    if (cookieTok && !store.auth.oauthToken) {
+    if (cookieTok && cookieTok !== store.auth.oauthToken) {
       store.auth.oauthToken = cookieTok;
       saveStore(store);
+    }
+    if (store.auth.oauthToken && !store.auth.clientId) {
+      await scApi.refreshClientId();
     }
     return {
       isLoggedIn: Boolean(store.auth.oauthToken && store.auth.clientId),

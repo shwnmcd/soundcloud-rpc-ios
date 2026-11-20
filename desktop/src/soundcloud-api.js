@@ -1,19 +1,65 @@
+const { net, session } = require('electron');
+
 /**
- * Authenticated SoundCloud API v2 Proxy (runs in Electron main process -> zero CORS issues!)
- * Full feature parity with iOS & Android:
- * - Ad-free direct HLS / progressive stream URL resolution
- * - 4-source playlist sync (eliminates "Untitled Playlists"!)
- * - Two-way Like/Unlike, Create Playlist, Add/Remove Track, Follow/Unfollow
- * - Full Artist Profile (Spotlight, Top Tracks, Albums, Playlists, Tracks, Reposts, Likes)
+ * Authenticated SoundCloud API v2 Proxy (runs in Electron main process via Chromium net.fetch!)
+ * Uses Chromium's real TLS stack + session cookies (datadome, oauth_token) + automatic client_id refresh!
  */
 class SoundCloudDesktopAPI {
-  constructor(getAuth) {
+  constructor(getAuth, onClientIdRefreshed = null) {
     this.getAuth = getAuth;
+    this.onClientIdRefreshed = onClientIdRefreshed;
     this.currentUser = null;
+    this._refreshPromise = null;
   }
 
-  async request(urlString, { method = 'GET', jsonBody = null } = {}) {
-    const { oauthToken, clientId } = this.getAuth();
+  cleanToken(raw) {
+    let t = String(raw || '').trim();
+    if (!t) return '';
+    try { t = decodeURIComponent(t); } catch {}
+    return t.replace(/^["']|["']$/g, '').trim();
+  }
+
+  async refreshClientId() {
+    if (this._refreshPromise) return this._refreshPromise;
+    this._refreshPromise = (async () => {
+      try {
+        const homeResp = await net.fetch('https://soundcloud.com', {
+          session: session.defaultSession,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
+          }
+        });
+        const html = await homeResp.text();
+        const scriptMatches = [...html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^"'\s]+\.js/g)].map((m) => m[0]);
+        const candidates = scriptMatches.reverse().slice(0, 10);
+        for (const scriptUrl of candidates) {
+          try {
+            const jsResp = await net.fetch(scriptUrl, { session: session.defaultSession });
+            const js = await jsResp.text();
+            const m = js.match(/client_id\s*[:=]\s*["']?([a-zA-Z0-9_-]{24,40})["']?/);
+            if (m && m[1]) {
+              this.onClientIdRefreshed?.(m[1]);
+              return m[1];
+            }
+          } catch {}
+        }
+      } catch {}
+      return null;
+    })();
+    try {
+      return await this._refreshPromise;
+    } finally {
+      this._refreshPromise = null;
+    }
+  }
+
+  async request(urlString, { method = 'GET', jsonBody = null, allowRetry = true } = {}) {
+    let { oauthToken, clientId } = this.getAuth();
+    oauthToken = this.cleanToken(oauthToken);
+    if (!clientId) {
+      clientId = (await this.refreshClientId()) || '';
+    }
+
     const u = new URL(urlString);
     if (!u.searchParams.has('client_id') && clientId) {
       u.searchParams.set('client_id', clientId);
@@ -38,12 +84,24 @@ class SoundCloudDesktopAPI {
     if (jsonBody !== null) {
       headers['Content-Type'] = 'application/json; charset=utf-8';
       body = JSON.stringify(jsonBody);
-    } else if (method === 'PUT') {
-      headers['Content-Length'] = '0';
     }
 
-    const resp = await fetch(u.toString(), { method, headers, body, cache: 'no-store' });
+    const resp = await net.fetch(u.toString(), {
+      method,
+      headers,
+      body,
+      credentials: 'include',
+      session: session.defaultSession,
+      cache: 'no-store'
+    });
+
     if (!resp.ok) {
+      if ((resp.status === 401 || resp.status === 403) && allowRetry) {
+        const fresh = await this.refreshClientId();
+        if (fresh) {
+          return this.request(urlString, { method, jsonBody, allowRetry: false });
+        }
+      }
       throw new Error(`SoundCloud HTTP ${resp.status}`);
     }
     const text = await resp.text();
@@ -284,6 +342,11 @@ class SoundCloudDesktopAPI {
   async fetchHistory() {
     try {
       const root = await this.request('https://api-v2.soundcloud.com/me/play-history/tracks?limit=50');
+      const tracks = (root.collection || []).map((e) => e?.track).filter(Boolean);
+      if (tracks.length > 0) return tracks;
+    } catch {}
+    try {
+      const root = await this.request('https://api-v2.soundcloud.com/me/play-history?limit=50');
       return (root.collection || []).map((e) => e?.track).filter(Boolean);
     } catch {
       return [];
