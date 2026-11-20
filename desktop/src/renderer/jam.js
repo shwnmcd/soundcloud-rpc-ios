@@ -1,6 +1,6 @@
 /**
- * Worldwide Real-Time Group Listening ("Jam") Engine for Windows Desktop
- * 100% wire-compatible with SoundCloud RPC iOS & Android!
+ * CloudWave Worldwide Real-Time Group Listening ("Jam") & Mini-Game Sync Engine
+ * 100% wire-compatible with CloudWave iOS (.ipa) & Android (.apk)!
  */
 class DesktopJamManager {
   constructor(hooks) {
@@ -21,6 +21,11 @@ class DesktopJamManager {
     this.reconnectTimer = null;
     this.lastNtfyId = null;
     this.reconnectAttempt = 0;
+
+    // Cross-platform Multiplayer Mini-Game Sync
+    this.latestChessPayload = null;
+    this.latestBlackjackEvent = null;
+    this.blackjackFeed = [];
   }
 
   get canControlPlayback() {
@@ -36,11 +41,11 @@ class DesktopJamManager {
   }
 
   get inviteLink() {
-    return this.roomCode ? `soundcloudrpc://jam/${this.roomCode}` : '';
+    return this.roomCode ? `cloudwave://jam/${this.roomCode}` : '';
   }
 
   get shareText() {
-    return `Join my SoundCloud Jam! Open SoundCloud RPC and enter code ${this.roomCode} or tap: ${this.inviteLink}`;
+    return `Join my CloudWave Jam! Open CloudWave and enter code ${this.roomCode} or tap: ${this.inviteLink}`;
   }
 
   get relayBase() {
@@ -102,7 +107,8 @@ class DesktopJamManager {
     this.allowGuestControl = false; // Host Only by default!
     this.lastNtfyId = null;
     this.reconnectAttempt = 0;
-    this.statusNote = 'Hosting live Jam';
+    this.statusNote = 'Connecting live Jam...';
+    this.blackjackFeed = [];
     this.participants = [
       {
         id: this.clientId,
@@ -116,10 +122,7 @@ class DesktopJamManager {
     this.hooks.onUpdate();
     await this.connectSocket();
     this.startHeartbeat();
-    setTimeout(() => {
-      this.broadcastHostState();
-      this.hooks.onToast(`Jam started · Code ${code}`);
-    }, 450);
+    this.hooks.onToast(`Jam started · Code ${code}`);
   }
 
   async joinJam(codeOrUrl) {
@@ -137,6 +140,7 @@ class DesktopJamManager {
     this.lastNtfyId = null;
     this.reconnectAttempt = 0;
     this.statusNote = `Connecting to Jam ${code}...`;
+    this.blackjackFeed = [];
     this.participants = [
       {
         id: this.clientId,
@@ -149,11 +153,7 @@ class DesktopJamManager {
     this.hooks.onUpdate();
     await this.connectSocket();
     this.startHeartbeat();
-    setTimeout(async () => {
-      await this.publish('join');
-      setTimeout(() => this.publish('sync_request'), 350);
-      this.hooks.onToast(`Joined Jam ${code}`);
-    }, 450);
+    this.hooks.onToast(`Joined Jam ${code}`);
   }
 
   async leaveJam(silent = false) {
@@ -182,6 +182,9 @@ class DesktopJamManager {
     this.sharedQueue = [];
     this.statusNote = '';
     this.lastNtfyId = null;
+    this.latestChessPayload = null;
+    this.latestBlackjackEvent = null;
+    this.blackjackFeed = [];
     this.hooks.onUpdate();
 
     if (wasActive && !silent) {
@@ -224,6 +227,16 @@ class DesktopJamManager {
     this.publish('reaction', { emoji });
   }
 
+  sendChessState(jsonString) {
+    if (!this.isActive) return;
+    this.publish('game_chess', { gameData: jsonString });
+  }
+
+  sendBlackjackUpdate(jsonString) {
+    if (!this.isActive) return;
+    this.publish('game_blackjack', { gameData: jsonString });
+  }
+
   onLocalPlaybackChange(action, seekSec = null) {
     if (!this.isActive) return;
     if (this.isHost) {
@@ -256,12 +269,22 @@ class DesktopJamManager {
     const ws = new WebSocket(`${wsBase}/${topic}/ws?since=${encodeURIComponent(since)}`);
     this.ws = ws;
 
-    ws.onopen = () => {
+    ws.onopen = async () => {
       if (this.ws !== ws) return;
       this.connectionState = 'connected';
       this.reconnectAttempt = 0;
-      this.statusNote = this.isHost ? 'Live · Sharing with friends' : 'Synced live with Host';
+      this.statusNote = this.isHost ? 'Live · Sharing with friends' : 'Connected · Waiting for Host';
       this.hooks.onUpdate();
+
+      // Immediately announce presence & sync once socket is confirmed open!
+      if (this.isHost) {
+        await this.broadcastHostState();
+      } else {
+        await this.publish('join');
+        setTimeout(() => {
+          if (this.isActive && !this.isHost) this.publish('sync_request');
+        }, 450);
+      }
     };
 
     ws.onmessage = (msg) => {
@@ -294,7 +317,7 @@ class DesktopJamManager {
       this.hooks.onUpdate();
       this.publish('heartbeat');
       if (this.isHost) this.broadcastHostState();
-    }, 22000);
+    }, 18000);
   }
 
   async broadcastHostState() {
@@ -329,18 +352,27 @@ class DesktopJamManager {
       queue: extra.queue ?? null,
       action: extra.action ?? null,
       seekSec: extra.seekSec ?? null,
-      emoji: extra.emoji ?? null
+      emoji: extra.emoji ?? null,
+      gameData: extra.gameData ?? null
     };
 
+    const url = `${this.relayBase}/${topic}`;
+    const bodyText = JSON.stringify(ev);
+
+    // Publish via Electron main-process Node fetch with text/plain (zero CORS & ntfy.sh raw payload!)
     try {
-      await fetch(`${this.relayBase}/${topic}`, {
+      if (window.scDesktop?.jamPublish) {
+        await window.scDesktop.jamPublish(url, bodyText);
+        return;
+      }
+      await fetch(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'text/plain; charset=utf-8',
           Firebase: 'no',
           Priority: '1'
         },
-        body: JSON.stringify(ev)
+        body: bodyText
       });
     } catch {}
   }
@@ -402,6 +434,24 @@ class DesktopJamManager {
       case 'control':
         if (this.isHost && this.allowGuestControl && ev.action) {
           this.hooks.onApplyGuestControl(ev.action, ev.track, ev.seekSec);
+        }
+        break;
+      case 'game_chess':
+        if (ev.gameData) {
+          this.latestChessPayload = ev.gameData;
+          this.hooks.onChessRemote?.(ev.gameData, ev.senderName);
+        }
+        break;
+      case 'game_blackjack':
+        if (ev.gameData) {
+          this.latestBlackjackEvent = { senderName: ev.senderName, payload: ev.gameData };
+          try {
+            const parsed = JSON.parse(ev.gameData);
+            const summary = parsed?.summary ? `${ev.senderName}: ${parsed.summary}` : `${ev.senderName} played a hand`;
+            this.blackjackFeed.unshift({ text: summary, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+            this.blackjackFeed = this.blackjackFeed.slice(0, 8);
+            this.hooks.onBlackjackRemote?.(summary, parsed);
+          } catch {}
         }
         break;
       case 'state':

@@ -379,7 +379,7 @@ class JamSessionManager(
             seekSec = seekSec,
             emoji = emoji
         )
-        val body = gson.toJson(ev).toRequestBody("application/json; charset=utf-8".toMediaType())
+        val body = gson.toJson(ev).toRequestBody("text/plain; charset=utf-8".toMediaType())
         val req = Request.Builder()
             .url("$relayBase/${topicName(code)}")
             .post(body)

@@ -1,9 +1,9 @@
 {
-  "name": "soundcloud-rpc-desktop",
-  "version": "2.7.0",
-  "description": "SoundCloud RPC Desktop — Native Ad-Free SoundCloud with Discord Rich Presence, Worldwide Group Jam, Themes, Vinyl Player & VFD Visualizer",
+  "name": "cloudwave-desktop",
+  "version": "3.0.0",
+  "description": "CloudWave — Native Ad-Free SoundCloud with Discord Rich Presence, Worldwide Group Jam, Chess & 21 Blackjack, Themes & VFD Visualizer",
   "main": "src/main.js",
-  "author": "SoundCloud RPC",
+  "author": "CloudWave",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -18,9 +18,9 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.soundcloudrpc.desktop",
-    "productName": "SoundCloud RPC",
-    "artifactName": "SoundCloudRPC-Windows.exe",
+    "appId": "com.cloudwave.desktop",
+    "productName": "CloudWave",
+    "artifactName": "CloudWave.exe",
     "directories": {
       "output": "dist"
     },
@@ -40,7 +40,7 @@
       ]
     },
     "portable": {
-      "artifactName": "SoundCloudRPC-Windows.exe"
+      "artifactName": "CloudWave.exe"
     }
   }
 }

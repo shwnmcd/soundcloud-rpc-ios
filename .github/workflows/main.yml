@@ -1,4 +1,4 @@
-name: Build Windows (EXE), iOS (IPA) & Android (APK)
+name: Build CloudWave
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-windows:
-    name: Build Windows Desktop (EXE)
+    name: Build Windows Desktop
     runs-on: windows-latest
 
     steps:
@@ -23,26 +23,26 @@ jobs:
         working-directory: desktop
         run: npm install --no-audit --no-fund
 
-      - name: Build Portable Windows EXE
+      - name: Build Portable Windows App
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run build:win
 
-      - name: Verify EXE Output
+      - name: Verify Output
         working-directory: desktop
         shell: pwsh
         run: Get-ChildItem dist\*.exe
 
-      - name: Upload SoundCloudRPC-Windows.exe
+      - name: Upload CloudWave-Windows
         uses: actions/upload-artifact@v4
         with:
-          name: SoundCloudRPC-Windows-EXE
-          path: desktop/dist/SoundCloudRPC-Windows.exe
+          name: CloudWave-Windows
+          path: desktop/dist/CloudWave.exe
           retention-days: 30
 
   build-ios:
-    name: Build iOS & iPadOS (AltStore IPA)
+    name: Build iOS & iPadOS (AltStore)
     runs-on: macos-latest
 
     steps:
@@ -72,24 +72,24 @@ jobs:
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             build
 
-      - name: Package IPA
+      - name: Package CloudWave.ipa
         working-directory: ios
         run: |
           mkdir -p dist/Payload
           cp -r build/Build/Products/Release-iphoneos/SoundCloudRPC.app dist/Payload/
           cd dist
-          zip -r -y SoundCloudRPC.ipa Payload
-          ls -lh SoundCloudRPC.ipa
+          zip -r -y CloudWave.ipa Payload
+          ls -lh CloudWave.ipa
 
-      - name: Upload SoundCloudRPC.ipa (AltStore)
+      - name: Upload CloudWave-iOS
         uses: actions/upload-artifact@v4
         with:
-          name: SoundCloudRPC-iOS-IPA
-          path: ios/dist/SoundCloudRPC.ipa
+          name: CloudWave-iOS
+          path: ios/dist/CloudWave.ipa
           retention-days: 30
 
   build-android:
-    name: Build Android (APK)
+    name: Build Android
     runs-on: ubuntu-latest
 
     steps:
@@ -111,16 +111,16 @@ jobs:
         working-directory: android
         run: gradle assembleRelease --no-daemon
 
-      - name: Package SoundCloudRPC.apk
+      - name: Package CloudWave.apk
         working-directory: android
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/SoundCloudRPC.apk
-          ls -lh dist/SoundCloudRPC.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/CloudWave.apk
+          ls -lh dist/CloudWave.apk
 
-      - name: Upload SoundCloudRPC.apk (Android)
+      - name: Upload CloudWave-Android
         uses: actions/upload-artifact@v4
         with:
-          name: SoundCloudRPC-Android-APK
-          path: android/dist/SoundCloudRPC.apk
+          name: CloudWave-Android
+          path: android/dist/CloudWave.apk
           retention-days: 30

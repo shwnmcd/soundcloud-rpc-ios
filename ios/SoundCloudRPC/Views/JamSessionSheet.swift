@@ -12,6 +12,7 @@ struct JamSessionSheet: View {
     @State private var joinCodeInput: String = ""
     @State private var copiedCode: Bool = false
     @State private var showQRCode: Bool = false
+    @State private var showGamesSheet: Bool = false
     @State private var pulseAnimate: Bool = false
 
     // Collaborative Queue Quick Search
@@ -69,6 +70,11 @@ struct JamSessionSheet: View {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
                 }
+            }
+            .sheet(isPresented: $showGamesSheet) {
+                JamGamesSheet()
+                    .environmentObject(jam)
+                    .environment(\.scTheme, theme)
             }
         }
     }
@@ -531,6 +537,40 @@ struct JamSessionSheet: View {
             .padding(14)
             .background(theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            // Multiplayer Jam Mini-Games Button (Chess & 21 Blackjack!)
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showGamesSheet = true
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(theme.accent.opacity(0.18))
+                            .frame(width: 40, height: 40)
+                        Image(systemName: "gamecontroller.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(theme.accent)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Play Together: Chess & 21 Blackjack")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundColor(theme.textPrimary)
+                        Text("Live multiplayer board synced across Windows & iOS")
+                            .font(.caption2)
+                            .foregroundColor(theme.textSecondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundColor(theme.textTertiary)
+                }
+                .padding(12)
+                .background(theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(theme.accent.opacity(0.35), lineWidth: 1))
+            }
+            .buttonStyle(SpringPressButtonStyle(pressedScale: 0.97))
 
             // Live Emoji Reactions Bar
             HStack(spacing: 8) {

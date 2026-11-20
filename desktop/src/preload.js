@@ -26,10 +26,11 @@ contextBridge.exposeInMainWorld('scDesktop', {
     ipcRenderer.invoke('sc:addTrackToPlaylist', { playlistId, trackId }),
   resolveStream: (track) => ipcRenderer.invoke('sc:resolveStream', track),
 
-  // Discord RPC + Last.fm + Webhooks
+  // Discord RPC + Last.fm + Webhooks + Jam Relay
   syncPlayback: (payload) => ipcRenderer.invoke('playback:sync', payload),
   testWebhook: () => ipcRenderer.invoke('integrations:testWebhook'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  jamPublish: (url, bodyText) => ipcRenderer.invoke('jam:publish', { url, bodyText }),
 
   // Push events from Main
   onAuthUpdated: (cb) => ipcRenderer.on('auth-updated', (_e, data) => cb(data)),

@@ -224,8 +224,8 @@ class DiscordRPCClient {
     if (settings.displaySmallIcon) {
       activity.assets.small_image = 'soundcloud-logo';
       activity.assets.small_text = payload.jamCode
-        ? `Live Jam · ${payload.jamCode}`
-        : 'SoundCloud RPC';
+        ? `CloudWave Jam · ${payload.jamCode}`
+        : 'CloudWave';
     }
 
     if (payload.isPlaying && duration > 0) {

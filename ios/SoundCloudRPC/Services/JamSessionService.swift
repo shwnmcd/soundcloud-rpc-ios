@@ -87,6 +87,7 @@ private struct JamEvent: Codable {
     let action: String? // play, pause, next, prev, seek, track
     let seekSec: Double?
     let emoji: String?
+    let gameData: String? // JSON-encoded Chess / Blackjack multiplayer state
 }
 
 private struct NtfyEnvelope: Decodable {
@@ -107,6 +108,9 @@ final class JamSessionService: ObservableObject {
     @Published private(set) var activeReactions: [JamReactionBurst] = []
     @Published var allowGuestControl: Bool = false
     @Published var statusNote: String = ""
+    /// Latest incoming multiplayer Chess / Blackjack payload from Jam room
+    @Published var latestChessPayload: String?
+    @Published var latestBlackjackEvent: String?
 
     /// True when the local user is allowed to control playback (Play/Pause/Skip/Scrub)
     var canControlPlayback: Bool {
@@ -351,6 +355,20 @@ final class JamSessionService: ObservableObject {
         }
     }
 
+    func sendChessState(_ jsonString: String) {
+        guard isActive else { return }
+        Task {
+            await publishEvent(type: "game_chess", gameData: jsonString)
+        }
+    }
+
+    func sendBlackjackUpdate(_ jsonString: String) {
+        guard isActive else { return }
+        Task {
+            await publishEvent(type: "game_blackjack", gameData: jsonString)
+        }
+    }
+
     private func spawnLocalReaction(emoji: String, senderName: String) {
         let burst = JamReactionBurst(
             emoji: emoji,
@@ -511,7 +529,8 @@ final class JamSessionService: ObservableObject {
         queue: [JamTrackRef]? = nil,
         action: String? = nil,
         seekSec: Double? = nil,
-        emoji: String? = nil
+        emoji: String? = nil,
+        gameData: String? = nil
     ) async {
         let code = explicitCode ?? roomCode
         guard !code.isEmpty else { return }
@@ -531,7 +550,8 @@ final class JamSessionService: ObservableObject {
             queue: queue,
             action: action,
             seekSec: seekSec,
-            emoji: emoji
+            emoji: emoji,
+            gameData: gameData
         )
 
         guard let payload = try? encoder.encode(event),
@@ -541,7 +561,8 @@ final class JamSessionService: ObservableObject {
         req.httpMethod = "POST"
         req.httpBody = payload
         req.timeoutInterval = 12
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // IMPORTANT: ntfy.sh requires text/plain when posting raw JSON body to /<topic>
+        req.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type")
         req.setValue("no", forHTTPHeaderField: "Firebase")
         req.setValue("1", forHTTPHeaderField: "Priority")
 
@@ -602,6 +623,21 @@ final class JamSessionService: ObservableObject {
         case "reaction":
             if let emoji = event.emoji, !emoji.isEmpty {
                 spawnLocalReaction(emoji: emoji, senderName: event.senderName)
+            }
+
+        case "game_chess":
+            if let gd = event.gameData {
+                latestChessPayload = gd
+            }
+
+        case "game_blackjack":
+            if let gd = event.gameData {
+                latestBlackjackEvent = gd
+                if let d = gd.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                   let summary = obj["summary"] as? String {
+                    api?.showToast("🃏 \(event.senderName): \(summary)")
+                }
             }
 
         case "queue_add":

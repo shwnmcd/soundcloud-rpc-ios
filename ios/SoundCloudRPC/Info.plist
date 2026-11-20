@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>SoundCloud RPC</string>
+	<string>CloudWave</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -27,6 +27,7 @@
 			<string>com.soundcloudrpc.mobile</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>cloudwave</string>
 				<string>soundcloudrpc</string>
 			</array>
 		</dict>
