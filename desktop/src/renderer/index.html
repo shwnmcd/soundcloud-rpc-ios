@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SoundCloud RPC Desktop</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-theme="dark" data-accent="orange">
+  <!-- Sign-In Overlay -->
+  <div id="signin-screen" class="signin-screen hidden">
+    <div class="signin-card">
+      <div class="brand-emblem big">
+        <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="white" stroke-width="2.4" stroke-linecap="round">
+          <path d="M4 15V9M8 18V6M12 20V4M16 17V7M20 14V10"/>
+        </svg>
+      </div>
+      <h1>SoundCloud RPC</h1>
+      <p class="muted">Native Windows Desktop Client · Zero Ads · Discord Rich Presence · Worldwide Group Jam · Vinyl Player · VFD Visualizer</p>
+      <button id="btn-signin" class="btn-primary big">Sign in with SoundCloud</button>
+      <p class="tiny muted">Opens SoundCloud securely inside the app — zero external setup.</p>
+    </div>
+  </div>
+
+  <!-- Main Desktop Shell -->
+  <div id="app-shell" class="app-shell hidden">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-emblem">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+            <path d="M4 15V9M8 18V6M12 20V4M16 17V7M20 14V10"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">SoundCloud RPC</div>
+          <div id="rpc-pill" class="rpc-pill">Discord: Connecting...</div>
+        </div>
+      </div>
+
+      <nav class="nav-list">
+        <button class="nav-item active" data-nav="home"><span>🏠</span> Home</button>
+        <button class="nav-item" data-nav="feed"><span>📡</span> Feed</button>
+        <button class="nav-item" data-nav="search"><span>🔍</span> Search</button>
+        <button class="nav-item" data-nav="likes"><span>🧡</span> Your Likes <span id="badge-likes" class="nav-badge"></span></button>
+        <button class="nav-item" data-nav="playlists"><span>💿</span> Playlists <span id="badge-playlists" class="nav-badge"></span></button>
+        <button class="nav-item" data-nav="albums"><span>📀</span> Albums</button>
+        <button class="nav-item" data-nav="following"><span>👥</span> Following</button>
+        <button class="nav-item" data-nav="history"><span>🕘</span> History</button>
+      </nav>
+
+      <div class="sidebar-divider"></div>
+
+      <div class="sidebar-actions">
+        <button id="btn-open-jam" class="sidebar-cta jam-cta">
+          <span id="jam-dot" class="status-dot"></span>
+          <span id="jam-btn-label">Group Jam</span>
+        </button>
+        <button id="btn-new-playlist" class="sidebar-cta">➕ New Playlist</button>
+        <button id="btn-sync-library" class="sidebar-cta">🔄 Sync SoundCloud</button>
+      </div>
+
+      <div class="sidebar-footer">
+        <button id="btn-theme-quick" class="icon-pill" title="Toggle Light / Dark Mode">☀️ / 🌙</button>
+        <button id="btn-open-settings" class="sidebar-cta compact">⚙️ Settings</button>
+      </div>
+    </aside>
+
+    <!-- Main Scroll Content -->
+    <main class="main-view">
+      <div id="view-content" class="view-content"></div>
+    </main>
+
+    <!-- Persistent Bottom Playback Bar -->
+    <footer class="player-bar">
+      <div class="player-left">
+        <div id="bar-art-wrap" class="bar-art-wrap" title="Open Fullscreen Now Playing">
+          <img id="bar-art" class="bar-art" src="" alt="" />
+        </div>
+        <div class="bar-meta">
+          <div class="bar-title-row">
+            <span id="bar-title" class="bar-title">Select a track to play</span>
+            <span id="bar-jam-tag" class="mini-jam-tag hidden">JAM</span>
+          </div>
+          <button id="bar-artist" class="bar-artist link-btn">—</button>
+        </div>
+        <button id="bar-like" class="icon-btn heart-btn" title="Like & sync to SoundCloud">♡</button>
+      </div>
+
+      <div class="player-center">
+        <div id="bar-lock-note" class="host-lock-note hidden">🔒 Host controls playback · <button id="btn-bar-resync" class="inline-link">Resync</button></div>
+        <div class="transport-row">
+          <button id="btn-shuffle" class="icon-btn" title="Shuffle">🔀</button>
+          <button id="btn-prev" class="icon-btn" title="Previous">⏮</button>
+          <button id="btn-play" class="play-circle" title="Play / Pause (Space)">▶</button>
+          <button id="btn-next" class="icon-btn" title="Next">⏭</button>
+          <button id="btn-repeat" class="icon-btn" title="Repeat">🔁</button>
+        </div>
+        <div class="scrubber-row">
+          <span id="time-elapsed" class="time-label">0:00</span>
+          <input id="scrubber" type="range" min="0" max="1000" value="0" class="scrubber" />
+          <span id="time-duration" class="time-label">0:00</span>
+        </div>
+      </div>
+
+      <div class="player-right">
+        <button id="btn-vfd-bar" class="vfd-pill-btn" title="Fullscreen VFD Spectrum Visualizer (F)">VFD</button>
+        <button id="btn-jam-bar" class="icon-btn" title="Group Jam">👥</button>
+        <button id="btn-expand-np" class="icon-btn" title="Now Playing / Vinyl View">⬆</button>
+        <div class="vol-wrap">
+          <span>🔊</span>
+          <input id="volume-slider" type="range" min="0" max="100" value="85" class="vol-slider" />
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Fullscreen Now Playing Overlay (Vinyl Record · Full Artwork · Ambient Card) -->
+  <div id="now-playing-overlay" class="overlay hidden">
+    <div id="np-bg" class="np-bg"></div>
+    <div class="np-scrim"></div>
+    <div class="np-inner">
+      <div class="np-top">
+        <button id="btn-np-close" class="circle-btn">⌄</button>
+        <div class="np-style-group">
+          <div class="style-pills">
+            <button class="style-pill" data-style="vinyl">💿 Vinyl</button>
+            <button class="style-pill" data-style="fullscreen">🖼 Full</button>
+            <button class="style-pill" data-style="card">🎴 Card</button>
+          </div>
+          <button id="btn-np-vfd" class="vfd-pill-btn">VFD</button>
+          <button id="btn-np-jam" class="jam-badge-btn hidden">● JAM</button>
+        </div>
+        <button id="btn-np-add-pl" class="circle-btn" title="Add to Playlist">＋</button>
+      </div>
+
+      <div id="np-stage" class="np-stage">
+        <!-- Vinyl Record Player -->
+        <div id="np-vinyl-wrap" class="vinyl-stage">
+          <div class="vinyl-platter">
+            <div id="vinyl-disc" class="vinyl-disc">
+              <div class="vinyl-grooves"></div>
+              <div class="vinyl-sheen"></div>
+              <div class="vinyl-label">
+                <img id="vinyl-art" src="" alt="" />
+                <div class="vinyl-spindle"></div>
+              </div>
+            </div>
+            <div id="vinyl-tonearm" class="vinyl-tonearm">
+              <div class="tonearm-base"></div>
+              <div class="tonearm-stick">
+                <div class="tonearm-head"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ambient Card -->
+        <div id="np-card-wrap" class="card-stage hidden">
+          <img id="card-art" class="card-art" src="" alt="" />
+        </div>
+      </div>
+
+      <div class="np-controls">
+        <div class="np-meta-row">
+          <div>
+            <div id="np-title" class="np-title">—</div>
+            <button id="np-artist" class="np-artist link-btn">—</button>
+          </div>
+          <button id="np-like" class="icon-btn heart-btn big">♡</button>
+        </div>
+
+        <div class="scrubber-row">
+          <span id="np-elapsed" class="time-label">0:00</span>
+          <input id="np-scrubber" type="range" min="0" max="1000" value="0" class="scrubber" />
+          <span id="np-remaining" class="time-label">-0:00</span>
+        </div>
+
+        <div id="np-lock-banner" class="host-lock-note center hidden">🔒 Host controls playback · <button id="btn-np-resync" class="inline-link">Tap to resync</button></div>
+
+        <div class="transport-row big">
+          <button id="np-shuffle" class="icon-btn">🔀</button>
+          <button id="np-prev" class="icon-btn">⏮</button>
+          <button id="np-play" class="play-circle big">▶</button>
+          <button id="np-next" class="icon-btn">⏭</button>
+          <button id="np-repeat" class="icon-btn">🔁</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fullscreen Customizable Hardware VFD Spectrum Visualizer -->
+  <div id="vfd-overlay" class="overlay vfd-overlay hidden">
+    <div id="vfd-hud-top" class="vfd-hud-top">
+      <button id="btn-vfd-close" class="circle-btn">✕</button>
+      <div class="vfd-track-meta">
+        <div id="vfd-title" class="vfd-title">VFD Spectrum</div>
+        <div id="vfd-artist" class="vfd-artist">SoundCloud RPC</div>
+      </div>
+      <button id="btn-vfd-style-toggle" class="vfd-pill-btn">⚙ Style</button>
+    </div>
+
+    <div id="vfd-stage" class="vfd-stage">
+      <div id="vfd-chassis" class="vfd-chassis bezel-on">
+        <div class="vfd-vents"></div>
+        <div class="vfd-screw tl"></div><div class="vfd-screw tr"></div>
+        <div class="vfd-screw bl"></div><div class="vfd-screw br"></div>
+        <canvas id="vfd-canvas" class="vfd-canvas"></canvas>
+      </div>
+    </div>
+
+    <div id="vfd-customizer" class="vfd-customizer hidden">
+      <div class="viz-row">
+        <span class="viz-label">Mode</span>
+        <div id="viz-modes" class="chip-row"></div>
+      </div>
+      <div class="viz-row">
+        <span class="viz-label">Phosphor</span>
+        <div id="viz-colors" class="chip-row"></div>
+      </div>
+      <div class="viz-row">
+        <span class="viz-label">Bands</span>
+        <div id="viz-bands" class="chip-row"></div>
+        <label class="viz-check"><input type="checkbox" id="viz-peak-hold" /> Peaks</label>
+        <label class="viz-check"><input type="checkbox" id="viz-bezel" /> Rack Bezel</label>
+      </div>
+      <div class="viz-row">
+        <span class="viz-label">Gain</span>
+        <input id="viz-gain" type="range" min="0.5" max="1.9" step="0.05" value="1.15" />
+        <span id="viz-gain-val" class="mono">1.2x</span>
+      </div>
+    </div>
+
+    <div id="vfd-hud-bottom" class="vfd-hud-bottom">
+      <button id="vfd-like" class="icon-btn heart-btn">♡</button>
+      <div class="transport-row">
+        <button id="vfd-prev" class="icon-btn">⏮</button>
+        <button id="vfd-play" class="play-circle vfd-play">▶</button>
+        <button id="vfd-next" class="icon-btn">⏭</button>
+      </div>
+      <span class="tiny muted">Click display to hide HUD · Esc to exit</span>
+    </div>
+  </div>
+
+  <!-- Modal Container (Jam / Settings / Create Playlist / Add to Playlist) -->
+  <div id="modal-backdrop" class="modal-backdrop hidden">
+    <div id="modal-box" class="modal-box"></div>
+  </div>
+
+  <!-- Floating Sync & Jam Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Floating Jam Reactions Layer -->
+  <div id="reactions-layer" class="reactions-layer"></div>
+
+  <audio id="audio-player" crossorigin="anonymous"></audio>
+
+  <script src="../../node_modules/hls.js/dist/hls.min.js"></script>
+  <script src="jam.js"></script>
+  <script src="visualizer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

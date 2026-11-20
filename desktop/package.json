@@ -1,0 +1,46 @@
+{
+  "name": "soundcloud-rpc-desktop",
+  "version": "2.7.0",
+  "description": "SoundCloud RPC Desktop — Native Ad-Free SoundCloud with Discord Rich Presence, Worldwide Group Jam, Themes, Vinyl Player & VFD Visualizer",
+  "main": "src/main.js",
+  "author": "SoundCloud RPC",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win portable --x64",
+    "build:win-nsis": "electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "hls.js": "^1.5.17"
+  },
+  "devDependencies": {
+    "electron": "^32.2.5",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.soundcloudrpc.desktop",
+    "productName": "SoundCloud RPC",
+    "artifactName": "SoundCloudRPC-Windows.exe",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "SoundCloudRPC-Windows.exe"
+    }
+  }
+}
