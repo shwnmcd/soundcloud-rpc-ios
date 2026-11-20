@@ -722,7 +722,7 @@ struct BlackjackMiniGameView: View {
         }
     }
 
-    static func handTotal(_ cards: [PlayingCard]) -> Int {
+    private static func handTotal(_ cards: [PlayingCard]) -> Int {
         var total = cards.reduce(0) { $0 + $1.value }
         var aces = cards.filter { $0.rank == "A" }.count
         while total > 21 && aces > 0 {
