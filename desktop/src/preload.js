@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld('scDesktop', {
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   jamPublish: (url, bodyText) => ipcRenderer.invoke('jam:publish', { url, bodyText }),
 
+  // Install / uninstall
+  getAppInfo: () => ipcRenderer.invoke('app:info'),
+  uninstallApp: () => ipcRenderer.invoke('app:uninstall'),
+  showInstallFolder: () => ipcRenderer.invoke('app:showInstallFolder'),
+
   // Push events from Main
   onAuthUpdated: (cb) => ipcRenderer.on('auth-updated', (_e, data) => cb(data)),
   onRpcStatus: (cb) => ipcRenderer.on('rpc-status', (_e, data) => cb(data)),

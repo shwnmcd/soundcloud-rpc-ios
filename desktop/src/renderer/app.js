@@ -4,7 +4,8 @@
   // MARK: - App State
   const state = {
     isLoggedIn: false,
-    version: '3.0.0',
+    version: '3.1.0',
+    appInfo: null,
     rpcConnected: false,
     user: null,
     settings: {},
@@ -145,7 +146,7 @@
     }
     document.body.setAttribute('data-theme', mode);
     document.body.setAttribute('data-accent', state.settings.accentPreset || 'orange');
-    $('btn-theme-quick').textContent = mode === 'light' ? '🌙' : '☀️';
+    $('btn-theme-quick').innerHTML = window.ic(mode === 'light' ? 'moon' : 'sun', 16);
   }
 
   // MARK: - VFD Visualizer Engine
@@ -164,7 +165,7 @@
   let games = null;
   const jam = new window.DesktopJamManager({
     getRelayUrl: () => state.settings.jamRelayUrl || 'https://ntfy.sh',
-    getDisplayName: () => state.user?.username || state.user?.full_name || 'CloudWave Desktop',
+    getDisplayName: () => state.user?.username || state.user?.full_name || 'SoundCloud S Desktop',
     getAvatarUrl: () => state.user?.avatar_url || null,
     getCurrentTrack: () => state.currentTrack,
     getQueue: () => state.queue,
@@ -217,9 +218,10 @@
       }
     },
     onReaction: (burst) => spawnFloatingReaction(burst),
-    onChessRemote: (payload, sender) => games?.applyRemoteChess(payload, sender),
+    onChessRemote: (payload, sender, senderId) => games?.applyRemoteChess(payload, sender, senderId),
+    onConnect4Remote: (payload, sender, senderId) => games?.applyRemoteConnect4(payload, sender, senderId),
     onBlackjackRemote: (summary) => {
-      showToast(`🃏 ${summary}`);
+      showToast(`21 Blackjack · ${summary}`);
       if (state.modalType === 'games') renderGamesModal();
     },
     onToast: (msg) => showToast(msg),
@@ -231,7 +233,7 @@
     }
   });
 
-  games = new window.CloudWaveGames(
+  games = new window.SoundCloudSGames(
     jam,
     () => { if (state.modalType === 'games') renderGamesModal(); },
     (msg) => showToast(msg)
@@ -264,10 +266,10 @@
     npLock.classList.toggle('hidden', !locked);
     $('scrubber').disabled = locked;
     $('np-scrubber').disabled = locked;
-    const playGlyph = locked ? '🔒' : state.isPlaying ? '❚❚' : '▶';
-    $('btn-play').textContent = playGlyph;
-    $('np-play').textContent = playGlyph;
-    $('vfd-play').textContent = playGlyph;
+    const iconName = locked ? 'lock' : state.isPlaying ? 'pause' : 'play';
+    $('btn-play').innerHTML = window.ic(iconName, 14);
+    $('np-play').innerHTML = window.ic(iconName, 24);
+    $('vfd-play').innerHTML = window.ic(iconName, 18);
   }
 
   function updateRightRailLiveBadges() {
@@ -588,7 +590,7 @@
       const isCur = Number(el.dataset.trackId) === curId;
       el.classList.toggle('playing', isCur);
       const pbtn = el.querySelector('.tile-play-glyph, .feed-play-btn');
-      if (pbtn) pbtn.textContent = isCur && state.isPlaying ? '❚❚' : '▶';
+      if (pbtn) pbtn.innerHTML = window.ic(isCur && state.isPlaying ? 'pause' : 'play', 16);
     });
   }
 
@@ -598,17 +600,17 @@
     const rawArt = t ? (t.artwork_url || t.user?.avatar_url) : '';
     const norm = t
       ? normalizeTrackInfo(t.title, t.user?.username || t.user?.full_name)
-      : { artist: 'CloudWave', title: 'Select a track to play' };
+      : { artist: 'SoundCloud S', title: 'Select a track to play' };
 
     $('bar-art').src = artUrl(rawArt, 't200x200');
     $('bar-title').textContent = norm.title;
     $('bar-artist').textContent = norm.artist;
-    $('bar-like').textContent = liked ? '🧡' : '♡';
+    $('bar-like').innerHTML = window.ic(liked ? 'heartFill' : 'heart', 15);
     $('bar-like').classList.toggle('liked', liked);
 
     $('np-title').textContent = norm.title;
     $('np-artist').textContent = norm.artist;
-    $('np-like').textContent = liked ? '🧡' : '♡';
+    $('np-like').innerHTML = window.ic(liked ? 'heartFill' : 'heart', 22);
     $('np-like').classList.toggle('liked', liked);
     $('vinyl-art').src = artUrl(rawArt, 't500x500');
     $('card-art').src = artUrl(rawArt, 't500x500');
@@ -617,7 +619,7 @@
 
     $('vfd-title').textContent = norm.title;
     $('vfd-artist').textContent = jam.isActive ? `${norm.artist} · JAM ${jam.roomCode}` : norm.artist;
-    $('vfd-like').textContent = liked ? '🧡' : '♡';
+    $('vfd-like').innerHTML = window.ic(liked ? 'heartFill' : 'heart', 18);
     $('vfd-like').classList.toggle('liked', liked);
 
     const style = state.settings.playbackStyle || 'vinyl';
@@ -636,8 +638,9 @@
     $('np-shuffle').classList.toggle('active', state.isShuffling);
     $('btn-repeat').classList.toggle('active', state.repeatMode !== 'none');
     $('np-repeat').classList.toggle('active', state.repeatMode !== 'none');
-    $('btn-repeat').textContent = state.repeatMode === 'one' ? '🔂' : '🔁';
-    $('np-repeat').textContent = state.repeatMode === 'one' ? '🔂' : '🔁';
+    const repIcon = state.repeatMode === 'one' ? 'repeatOne' : 'repeat';
+    $('btn-repeat').innerHTML = window.ic(repIcon, 15);
+    $('np-repeat').innerHTML = window.ic(repIcon, 18);
 
     updateJamIndicators();
     updateScrubberDOM();
@@ -743,15 +746,15 @@
           <div class="sc-tile-art">
             <img src="${esc(artUrl(t.artwork_url || t.user?.avatar_url, 't500x500'))}" alt="" loading="lazy" />
             <div class="sc-tile-hover">
-              <div class="sc-tile-play tile-play-glyph">${isCur && state.isPlaying ? '❚❚' : '▶'}</div>
+              <div class="sc-tile-play tile-play-glyph">${window.ic(isCur && state.isPlaying ? 'pause' : 'play', 18)}</div>
               <div class="sc-tile-hover-actions">
-                <button class="sc-tile-mini-btn ${isLiked ? 'liked' : ''}" data-like-idx="${idx}" title="Like">${isLiked ? '🧡' : '♡'}</button>
-                ${jam.isActive ? `<button class="sc-tile-mini-btn" data-jam-add="${idx}" title="Queue in Jam">👥</button>` : ''}
-                <button class="sc-tile-mini-btn" data-pl-add="${idx}" title="Add to Playlist">＋</button>
+                <button class="sc-tile-mini-btn ${isLiked ? 'liked' : ''}" data-like-idx="${idx}" title="Like">${window.ic(isLiked ? 'heartFill' : 'heart', 13)}</button>
+                ${jam.isActive ? `<button class="sc-tile-mini-btn" data-jam-add="${idx}" title="Queue in Jam">${window.ic('users', 13)}</button>` : ''}
+                <button class="sc-tile-mini-btn" data-pl-add="${idx}" title="Add to Playlist">${window.ic('plus', 13)}</button>
               </div>
             </div>
           </div>
-          <div class="sc-tile-title">${showHeartPrefix ? '<span class="tiny-heart">♥</span>' : ''}<span>${esc(t.title || 'Untitled')}</span></div>
+          <div class="sc-tile-title">${showHeartPrefix ? `<span class="tiny-heart">${window.ic('heartFill', 11)}</span>` : ''}<span>${esc(t.title || 'Untitled')}</span></div>
           <button class="sc-tile-sub link-btn" data-artist-idx="${idx}">${esc(artist)}</button>
         </div>
       `;
@@ -774,12 +777,12 @@
           </div>
           <div class="track-info">
             <div class="track-title">${esc(t.title || 'Untitled Track')}</div>
-            <div class="track-sub"><button class="link-btn" data-artist-idx="${idx}">${esc(artist)}</button> ${plays ? `· ▶ ${plays}` : ''} · ${dur}</div>
+            <div class="track-sub"><button class="link-btn" data-artist-idx="${idx}">${esc(artist)}</button> ${plays ? `· ${plays} plays` : ''} · ${dur}</div>
           </div>
           <div class="track-actions">
-            ${jam.isActive ? `<button class="icon-btn" data-jam-add="${idx}" title="Add to Jam Queue">👥+</button>` : ''}
-            <button class="icon-btn" data-pl-add="${idx}" title="Add to Playlist">＋</button>
-            <button class="icon-btn heart-btn ${isLiked ? 'liked' : ''}" data-like-idx="${idx}" title="Like">${isLiked ? '🧡' : '♡'}</button>
+            ${jam.isActive ? `<button class="icon-btn" data-jam-add="${idx}" title="Add to Jam Queue">${window.ic('users', 15)}</button>` : ''}
+            <button class="icon-btn" data-pl-add="${idx}" title="Add to Playlist">${window.ic('plus', 15)}</button>
+            <button class="icon-btn heart-btn ${isLiked ? 'liked' : ''}" data-like-idx="${idx}" title="Like">${window.ic(isLiked ? 'heartFill' : 'heart', 15)}</button>
           </div>
         </div>
       `;
@@ -827,24 +830,25 @@
       <aside class="right-rail">
         <div class="rail-card">
           <div class="rail-title">
-            <span>Discord Rich Presence</span>
-            <button id="rail-sync-btn" class="link-btn tiny" style="text-transform:none">🔄 Sync</button>
+            <span>SoundCloud S · Discord RPC</span>
+            <button id="rail-sync-btn" class="link-btn tiny row-gap" style="text-transform:none;gap:4px">${window.ic('sync', 12)} Sync</button>
           </div>
           <div id="rail-rpc-badge" class="rpc-status-badge ${state.rpcConnected ? 'connected' : ''}">
             ${state.rpcConnected ? '● Discord RPC Connected' : '○ Open Discord Desktop'}
           </div>
-          <div class="tiny muted">Zero ads · Synced with SoundCloud likes &amp; playlists</div>
+          <div class="tiny muted">Based on <button id="rail-rpc-credit" class="inline-link" style="margin:0">SoundCloud RPC</button> · Zero ads</div>
         </div>
 
         <div class="rail-card">
           <div class="rail-title">
-            <span>Jam &amp; Mini-Games</span>
+            <span>Jam &amp; Multiplayer Arcade</span>
           </div>
-          <div id="rail-jam-status" class="tiny muted">${jam.isActive ? `● Live · ${esc(jam.roomCode)} (${jam.listenerCount})` : 'Listen together worldwide'}</div>
-          <button id="rail-open-jam" class="btn-primary" style="width:100%">👥 ${jam.isActive ? `Open Live Jam (${jam.listenerCount})` : 'Start / Join Jam'}</button>
+          <div id="rail-jam-status" class="tiny muted">${jam.isActive ? `● Live · ${esc(jam.roomCode)} (${jam.listenerCount})` : 'Listen & play with friends worldwide'}</div>
+          <button id="rail-open-jam" class="btn-primary" style="width:100%">${window.ic('users', 15)} ${jam.isActive ? `Open Live Jam (${jam.listenerCount})` : 'Start / Join Jam'}</button>
           <div class="row-gap">
-            <button id="rail-play-chess" class="btn-secondary" style="flex:1">♟ Chess</button>
-            <button id="rail-play-bj" class="btn-secondary" style="flex:1">🃏 21 Blackjack</button>
+            <button id="rail-play-c4" class="btn-secondary" style="flex:1;padding:7px 6px">Connect 4</button>
+            <button id="rail-play-chess" class="btn-secondary" style="flex:1;padding:7px 6px">Chess</button>
+            <button id="rail-play-bj" class="btn-secondary" style="flex:1;padding:7px 6px">21</button>
           </div>
         </div>
 
@@ -891,7 +895,9 @@
 
   function wireRightRail(root) {
     root.querySelector('#rail-sync-btn')?.addEventListener('click', () => syncAllData(true));
+    root.querySelector('#rail-rpc-credit')?.addEventListener('click', () => api.openExternal('https://github.com/richardhbtz/soundcloud-rpc'));
     root.querySelector('#rail-open-jam')?.addEventListener('click', () => openJamModal());
+    root.querySelector('#rail-play-c4')?.addEventListener('click', () => openGamesModal('connect4'));
     root.querySelector('#rail-play-chess')?.addEventListener('click', () => openGamesModal('chess'));
     root.querySelector('#rail-play-bj')?.addEventListener('click', () => openGamesModal('blackjack'));
     root.querySelector('#rail-see-following')?.addEventListener('click', () => setNav('library', 'following'));
@@ -913,7 +919,7 @@
           <div>
             <div id="home-likes-hero" class="likes-hero">
               <div class="row-gap" style="gap:14px">
-                <span style="font-size:30px">🧡</span>
+                <span style="color:var(--accent)">${window.ic('heartFill', 28)}</span>
                 <div>
                   <h2>Your likes</h2>
                   <div class="tiny muted">${state.likes.length ? `${state.likes.length}+ synced SoundCloud tracks` : 'Syncing your liked tracks...'}</div>
@@ -921,7 +927,7 @@
               </div>
               <div class="row-gap">
                 <button id="home-open-likes" class="btn-secondary">Open Grid</button>
-                <button id="home-shuffle-likes" class="btn-primary">🔀 Shuffle Likes</button>
+                <button id="home-shuffle-likes" class="btn-primary">${window.ic('shuffle', 14)} Shuffle Likes</button>
               </div>
             </div>
 
@@ -1023,7 +1029,7 @@
                   <article class="feed-card ${isCur ? 'playing' : ''}" data-feed-idx="${idx}" data-track-id="${t.id}">
                     <div class="feed-card-top">
                       <img src="${esc(artUrl(actor?.avatar_url || t.artwork_url, 't200x200'))}" alt="" loading="lazy" />
-                      <span><b>${esc(actorName)}</b> ${item.isRepost ? '🔁 reposted a track' : 'posted a track'}</span>
+                      <span><b>${esc(actorName)}</b> ${item.isRepost ? `${window.ic('repost', 12)} reposted a track` : 'posted a track'}</span>
                     </div>
 
                     <div class="feed-card-body">
@@ -1033,7 +1039,7 @@
 
                       <div class="feed-right-col">
                         <div class="feed-track-head">
-                          <button class="feed-play-btn" data-feed-play="${idx}">${isCur && state.isPlaying ? '❚❚' : '▶'}</button>
+                          <button class="feed-play-btn" data-feed-play="${idx}">${window.ic(isCur && state.isPlaying ? 'pause' : 'play', 16)}</button>
                           <div class="feed-track-titles">
                             <button class="feed-track-artist link-btn" data-feed-artist="${idx}">${esc(artistName)}</button>
                             <div class="feed-track-title" data-feed-play="${idx}">${esc(t.title || 'Untitled Track')}</div>
@@ -1049,14 +1055,14 @@
                         <div class="feed-actions-row">
                           <div class="feed-action-btns">
                             <button class="sc-action-btn ${isLiked ? 'liked' : ''}" data-feed-like="${idx}">
-                              ${isLiked ? '🧡' : '♡'} ${fmtCount(t.likes_count) || 'Like'}
+                              ${window.ic(isLiked ? 'heartFill' : 'heart', 12)} ${fmtCount(t.likes_count) || 'Like'}
                             </button>
-                            <button class="sc-action-btn" data-feed-pl="${idx}">＋ Playlist</button>
-                            ${jam.isActive ? `<button class="sc-action-btn" data-feed-jam="${idx}">👥 Jam Queue</button>` : ''}
+                            <button class="sc-action-btn" data-feed-pl="${idx}">${window.ic('plus', 12)} Playlist</button>
+                            ${jam.isActive ? `<button class="sc-action-btn" data-feed-jam="${idx}">${window.ic('users', 12)} Jam Queue</button>` : ''}
                           </div>
                           <div class="feed-stats">
-                            ${t.playback_count ? `<span>▶ ${fmtCount(t.playback_count)}</span>` : ''}
-                            ${t.comment_count ? `<span>💬 ${fmtCount(t.comment_count)}</span>` : ''}
+                            ${t.playback_count ? `<span class="row-gap" style="gap:4px">${window.ic('play', 11)} ${fmtCount(t.playback_count)}</span>` : ''}
+                            ${t.comment_count ? `<span class="row-gap" style="gap:4px">${window.ic('comment', 11)} ${fmtCount(t.comment_count)}</span>` : ''}
                           </div>
                         </div>
                       </div>
@@ -1236,13 +1242,13 @@
         <div class="lib-toolbar">
           <div class="lib-heading">${headings[state.libraryTab]}</div>
           <div class="lib-controls">
-            ${state.libraryTab === 'playlists' ? `<button id="lib-new-pl" class="btn-primary" style="height:30px;padding:0 12px;font-size:12px">➕ New Playlist</button>` : ''}
-            ${state.libraryTab === 'likes' && state.likes.length ? `<button id="lib-shuffle-likes" class="btn-secondary" style="height:30px;padding:0 11px;font-size:12px">🔀 Shuffle</button>` : ''}
+            ${state.libraryTab === 'playlists' ? `<button id="lib-new-pl" class="btn-primary" style="height:30px;padding:0 12px;font-size:12px">${window.ic('plus', 13)} New Playlist</button>` : ''}
+            ${state.libraryTab === 'likes' && state.likes.length ? `<button id="lib-shuffle-likes" class="btn-secondary" style="height:30px;padding:0 11px;font-size:12px">${window.ic('shuffle', 13)} Shuffle</button>` : ''}
             ${isTrackTab ? `
               <div class="view-toggle-group">
                 <span>View</span>
-                <button class="view-toggle-btn ${state.libraryView === 'grid' ? 'active' : ''}" data-lib-view="grid" title="Grid View">⊞</button>
-                <button class="view-toggle-btn ${state.libraryView === 'list' ? 'active' : ''}" data-lib-view="list" title="List View">☰</button>
+                <button class="view-toggle-btn ${state.libraryView === 'grid' ? 'active' : ''}" data-lib-view="grid" title="Grid View">${window.ic('grid', 14)}</button>
+                <button class="view-toggle-btn ${state.libraryView === 'list' ? 'active' : ''}" data-lib-view="list" title="List View">${window.ic('list', 14)}</button>
               </div>
             ` : ''}
             <input id="lib-filter-input" class="filter-input" placeholder="Filter" value="${esc(state.libraryFilter)}" />
@@ -1522,11 +1528,11 @@
     if (!jam.isActive) {
       box.innerHTML = `
         <div class="modal-header">
-          <div class="modal-title">👥 CloudWave Group Jam</div>
-          <button id="m-close" class="icon-btn">✕</button>
+          <div class="modal-title row-gap">${window.ic('users', 18)} <span>SoundCloud S Group Jam</span></div>
+          <button id="m-close" class="icon-btn">${window.ic('close', 16)}</button>
         </div>
-        <p class="muted">Listen in real-time sync &amp; play Chess or 21 Blackjack with friends on Windows, iPhone, iPad, or Android worldwide.</p>
-        <button id="jam-start-btn" class="btn-primary big">📡 Start a Live Jam</button>
+        <p class="muted">Listen in real-time sync &amp; play Connect Four, Chess, or 21 Blackjack against anyone in your Jam on Windows, iOS, or Android.</p>
+        <button id="jam-start-btn" class="btn-primary big">${window.ic('radio', 16)} Start a Live Jam</button>
         <div class="card-box">
           <span class="field-label">Join a Friend’s Jam</span>
           <div class="row-gap">
@@ -1535,7 +1541,7 @@
           </div>
           ${jam.statusNote ? `<div class="tiny" style="color:var(--accent)">${esc(jam.statusNote)}</div>` : ''}
         </div>
-        <button id="jam-open-solo-games" class="btn-secondary">🎮 Play Solo Chess &amp; 21 Blackjack</button>
+        <button id="jam-open-solo-games" class="btn-secondary">${window.ic('gamepad', 15)} Play Solo Connect Four, Chess &amp; 21</button>
       `;
       $('m-close').onclick = closeModal;
       $('jam-start-btn').onclick = () => jam.startJam();
@@ -1567,7 +1573,7 @@
         </div>
       </div>
 
-      <button id="jam-play-games" class="btn-primary big" style="width:100%">🎮 Play Together: Chess &amp; 21 Blackjack</button>
+      <button id="jam-play-games" class="btn-primary big" style="width:100%">${window.ic('gamepad', 16)} Play Together: Connect Four, Chess &amp; 21</button>
 
       ${cur ? `
         <div class="card-box">
@@ -1690,14 +1696,14 @@
 
     box.innerHTML = `
       <div class="modal-header">
-        <div class="modal-title">⚙️ CloudWave Settings &amp; Themes</div>
+        <div class="modal-title row-gap">${window.ic('settings', 18)} <span>SoundCloud S Settings</span></div>
         <button id="m-close" class="btn-secondary">Done</button>
       </div>
 
       <div class="card-box">
         <span class="field-label">Theme Mode</span>
         <div class="chip-row" style="margin:0">
-          ${[['dark', '🌙 Dark'], ['light', '☀️ Light'], ['amoled', '✨ Midnight OLED'], ['system', '💻 System']].map(([k, l]) =>
+          ${[['dark', 'Dark'], ['light', 'Light'], ['amoled', 'Midnight OLED'], ['system', 'System']].map(([k, l]) =>
             `<button class="chip ${s.themeMode === k ? 'active' : ''}" data-set-theme="${k}">${l}</button>`
           ).join('')}
         </div>
@@ -1707,7 +1713,7 @@
         </div>
         <span class="field-label" style="margin-top:6px">Now Playing Style</span>
         <div class="chip-row" style="margin:0">
-          ${[['vinyl', '💿 Vinyl Record'], ['fullscreen', '🖼 Full Artwork'], ['card', '🎴 Ambient Card']].map(([k, l]) =>
+          ${[['vinyl', 'Vinyl Record'], ['fullscreen', 'Full Artwork'], ['card', 'Ambient Card']].map(([k, l]) =>
             `<button class="chip ${s.playbackStyle === k ? 'active' : ''}" data-set-style="${k}">${l}</button>`
           ).join('')}
         </div>
@@ -1740,16 +1746,27 @@
         <label class="row-between" style="margin-top:6px"><span>Enable Webhooks</span><input type="checkbox" id="s-wh" ${s.webhookEnabled ? 'checked' : ''} /></label>
         <input id="s-wh-url" class="text-input" placeholder="https://discord.com/api/webhooks/..." value="${esc(s.webhookUrl)}" />
         <label class="row-between"><span>Format as Discord Embed</span><input type="checkbox" id="s-wh-disc" ${s.webhookDiscordFormat ? 'checked' : ''} /></label>
-        <button id="s-wh-test" class="btn-secondary">🚀 Send Test Webhook</button>
+        <button id="s-wh-test" class="btn-secondary">Send Test Webhook</button>
       </div>
 
       <div class="card-box">
+        <span class="field-label">About, Credits &amp; Uninstall</span>
         <div class="row-between">
           <div>
-            <div style="font-weight:700">${esc(state.user?.username || 'Signed In')}</div>
-            <div class="tiny muted">CloudWave v${esc(state.version)} · Native Windows Desktop</div>
+            <div style="font-weight:700">SoundCloud S v${esc(state.version)} · ${esc(state.user?.username || 'Signed In')}</div>
+            <div class="tiny muted">Based on <button id="s-rpc-link" class="inline-link" style="margin:0">SoundCloud RPC (richardhbtz/soundcloud-rpc)</button> · MIT License</div>
           </div>
-          <button id="s-signout" class="btn-danger">Sign Out</button>
+          <button id="s-signout" class="btn-secondary">${window.ic('logout', 14)} Sign Out</button>
+        </div>
+        ${state.appInfo?.installDir ? `
+          <div style="margin-top:4px">
+            <div class="tiny muted" style="margin-bottom:4px">Install Location:</div>
+            <div class="install-path-box">${esc(state.appInfo.installDir)}</div>
+          </div>
+        ` : ''}
+        <div class="row-gap" style="margin-top:4px">
+          <button id="s-open-folder" class="btn-secondary" style="flex:1">${window.ic('folder', 14)} Open Install Folder</button>
+          <button id="s-uninstall" class="btn-danger" style="flex:1">${window.ic('trash', 14)} Uninstall SoundCloud S</button>
         </div>
       </div>
     `;
@@ -1784,6 +1801,15 @@
       const res = await api.testWebhook();
       showToast(`Webhook: ${res}`);
     };
+    $('s-rpc-link')?.addEventListener('click', () => api.openExternal('https://github.com/richardhbtz/soundcloud-rpc'));
+    $('s-open-folder')?.addEventListener('click', () => api.showInstallFolder());
+    $('s-uninstall')?.addEventListener('click', async () => {
+      if (!confirm('Launch the SoundCloud S uninstaller? This will close and remove SoundCloud S from your PC.')) return;
+      const res = await api.uninstallApp();
+      if (!res?.ok) {
+        showToast(res?.error || 'Use Windows Installed Apps to uninstall.');
+      }
+    });
     $('s-signout').onclick = async () => {
       await api.signOut();
       state.isLoggedIn = false;
@@ -1958,17 +1984,17 @@
         state.lastVolume = audio.volume;
         audio.volume = 0;
         $('volume-slider').value = 0;
-        $('btn-mute').textContent = '🔇';
+        $('btn-mute').innerHTML = window.ic('mute', 15);
       } else {
         audio.volume = state.lastVolume || 0.85;
         $('volume-slider').value = Math.round(audio.volume * 100);
-        $('btn-mute').textContent = '🔊';
+        $('btn-mute').innerHTML = window.ic('volume', 15);
       }
     };
     $('volume-slider').oninput = (e) => {
       const v = Number(e.target.value) / 100;
       audio.volume = v;
-      $('btn-mute').textContent = v === 0 ? '🔇' : '🔊';
+      $('btn-mute').innerHTML = window.ic(v === 0 ? 'mute' : 'volume', 15);
     };
 
     $('btn-queue-toggle').onclick = () => {
@@ -2096,12 +2122,14 @@
 
   // MARK: - Boot
   async function boot() {
+    window.hydrateIcons?.(document);
     wireEvents();
-    const init = await api.init();
+    const [init, appInfo] = await Promise.all([api.init(), api.getAppInfo?.().catch(() => null)]);
     state.isLoggedIn = init.isLoggedIn;
     state.settings = init.settings || {};
     state.rpcConnected = init.rpcConnected;
-    state.version = init.version || '3.0.0';
+    state.version = init.version || '3.1.0';
+    state.appInfo = appInfo || null;
     applyTheme();
     showAuthState();
     renderPlayerUI();

@@ -1,14 +1,14 @@
 {
-  "name": "cloudwave-desktop",
-  "version": "3.0.0",
-  "description": "CloudWave — Native Ad-Free SoundCloud with Discord Rich Presence, Worldwide Group Jam, Chess & 21 Blackjack, Themes & VFD Visualizer",
+  "name": "soundcloud-s",
+  "version": "3.1.0",
+  "description": "SoundCloud S — ad-free SoundCloud desktop client with Discord Rich Presence, Group Jam & multiplayer games. Based on SoundCloud RPC by richardhbtz.",
   "main": "src/main.js",
-  "author": "CloudWave",
+  "author": "SoundCloud S (based on SoundCloud RPC by richardhbtz)",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "build:win": "electron-builder --win portable --x64",
-    "build:win-nsis": "electron-builder --win nsis --x64"
+    "build:win": "electron-builder --win nsis --x64",
+    "build:win-portable": "electron-builder --win portable --x64"
   },
   "dependencies": {
     "hls.js": "^1.5.17"
@@ -18,29 +18,52 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.cloudwave.desktop",
-    "productName": "CloudWave",
-    "artifactName": "CloudWave.exe",
+    "appId": "com.soundclouds.desktop",
+    "productName": "SoundCloud S",
+    "copyright": "SoundCloud S · Based on SoundCloud RPC by richardhbtz (MIT)",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "src/**/*",
       "node_modules/**/*",
       "package.json"
     ],
+    "protocols": [
+      {
+        "name": "SoundCloud S Jam",
+        "schemes": [
+          "soundcloudrpc"
+        ]
+      }
+    ],
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
         }
       ]
     },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SoundCloud S",
+      "uninstallDisplayName": "SoundCloud S",
+      "deleteAppDataOnUninstall": true,
+      "runAfterFinish": true,
+      "license": "build/license.txt",
+      "artifactName": "SoundCloud-S-Setup.exe"
+    },
     "portable": {
-      "artifactName": "CloudWave.exe"
+      "artifactName": "SoundCloud-S-Portable.exe"
     }
   }
 }

@@ -185,10 +185,10 @@ struct ContentView: View {
                 }
 
                 VStack(spacing: 8) {
-                    Text("SoundCloud RPC")
+                    Text("SoundCloud S")
                         .font(.title.weight(.bold))
                         .foregroundColor(theme.textPrimary)
-                    Text("100% Native iOS & iPadOS Client\nZero Ads · Vinyl Player · SoundCloud Sync")
+                    Text("Based on SoundCloud RPC\nZero Ads · Vinyl Player · Jam & Games")
                         .font(.subheadline)
                         .foregroundColor(theme.textSecondary)
                         .multilineTextAlignment(.center)

@@ -338,7 +338,7 @@ struct JamSessionSheet: View {
                             .padding(12)
                             .background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        Text("Scan to open SoundCloud RPC & join \(jam.roomCode)")
+                        Text("Scan to open SoundCloud S & join \(jam.roomCode)")
                             .font(.caption2)
                             .foregroundColor(theme.textSecondary)
                     }
@@ -553,10 +553,10 @@ struct JamSessionSheet: View {
                             .foregroundColor(theme.accent)
                     }
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Play Together: Chess & 21 Blackjack")
+                        Text("Play Together: Connect 4, Chess & 21")
                             .font(.subheadline.weight(.bold))
                             .foregroundColor(theme.textPrimary)
-                        Text("Live multiplayer board synced across Windows & iOS")
+                        Text("Challenge anyone in your Jam across Windows & iOS")
                             .font(.caption2)
                             .foregroundColor(theme.textSecondary)
                     }

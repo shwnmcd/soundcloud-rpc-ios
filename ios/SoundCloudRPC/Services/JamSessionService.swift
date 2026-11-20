@@ -108,9 +108,13 @@ final class JamSessionService: ObservableObject {
     @Published private(set) var activeReactions: [JamReactionBurst] = []
     @Published var allowGuestControl: Bool = false
     @Published var statusNote: String = ""
-    /// Latest incoming multiplayer Chess / Blackjack payload from Jam room
+    /// Latest incoming multiplayer Chess / Connect Four / Blackjack payload from Jam room
     @Published var latestChessPayload: String?
+    @Published var latestConnect4Payload: String?
     @Published var latestBlackjackEvent: String?
+
+    var localClientId: String { clientId }
+    var localDisplayName: String { myDisplayName }
 
     /// True when the local user is allowed to control playback (Play/Pause/Skip/Scrub)
     var canControlPlayback: Bool {
@@ -144,7 +148,7 @@ final class JamSessionService: ObservableObject {
     }
 
     var shareMessage: String {
-        "Join my SoundCloud Jam! Open SoundCloud RPC and enter code \(roomCode) or tap: \(inviteLink)"
+        "Join my Jam on SoundCloud S! Open SoundCloud S and enter code \(roomCode) or tap: \(inviteLink)"
     }
 
     var listenerCount: Int {
@@ -359,6 +363,13 @@ final class JamSessionService: ObservableObject {
         guard isActive else { return }
         Task {
             await publishEvent(type: "game_chess", gameData: jsonString)
+        }
+    }
+
+    func sendConnect4State(_ jsonString: String) {
+        guard isActive else { return }
+        Task {
+            await publishEvent(type: "game_connect4", gameData: jsonString)
         }
     }
 
@@ -628,6 +639,11 @@ final class JamSessionService: ObservableObject {
         case "game_chess":
             if let gd = event.gameData {
                 latestChessPayload = gd
+            }
+
+        case "game_connect4":
+            if let gd = event.gameData {
+                latestConnect4Payload = gd
             }
 
         case "game_blackjack":

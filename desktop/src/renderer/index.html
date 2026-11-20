@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CloudWave</title>
+  <title>SoundCloud S</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-theme="dark" data-accent="orange">
@@ -15,26 +15,27 @@
           <path d="M4 15V9M8 18V6M12 20V4M16 17V7M20 14V10"/>
         </svg>
       </div>
-      <h1>CloudWave</h1>
-      <p class="muted">Ad-Free SoundCloud Desktop · Discord Rich Presence · Worldwide Group Jam · Chess &amp; 21 · Vinyl Player · VFD Visualizer</p>
+      <h1>SoundCloud S</h1>
+      <div class="rpc-credit-pill">Based on SoundCloud RPC by richardhbtz</div>
+      <p class="muted">Ad-Free SoundCloud Desktop · Discord Rich Presence · Worldwide Group Jam · Connect Four, Chess &amp; 21 · Vinyl Player · VFD Visualizer</p>
       <button id="btn-signin" class="btn-primary big">Sign in with SoundCloud</button>
-      <p class="tiny muted">Signs in securely inside CloudWave — zero external setup.</p>
+      <p class="tiny muted">Signs in securely inside SoundCloud S — zero external setup.</p>
     </div>
   </div>
 
-  <!-- Main Desktop Shell (Official SoundCloud Desktop Architecture) -->
+  <!-- Main Desktop Shell -->
   <div id="app-shell" class="app-shell hidden">
     <!-- Sleek Fixed Top Navigation Bar -->
     <header class="topbar">
       <div class="topbar-inner">
         <div class="topbar-left">
-          <button id="brand-home" class="brand-btn" title="CloudWave Home">
+          <button id="brand-home" class="brand-btn" title="SoundCloud S Home">
             <span class="brand-emblem sm">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="white" stroke-width="2.6" stroke-linecap="round">
                 <path d="M4 15V9M8 18V6M12 20V4M16 17V7M20 14V10"/>
               </svg>
             </span>
-            <span class="brand-wordmark">CloudWave</span>
+            <span class="brand-wordmark">SoundCloud <span class="brand-s">S</span></span>
           </button>
 
           <nav class="top-nav">
@@ -45,8 +46,8 @@
         </div>
 
         <div class="topbar-search">
-          <input id="global-search-input" class="topbar-search-input" placeholder="Search for artists, tracks, playlists..." />
-          <button id="global-search-btn" class="topbar-search-icon" title="Search">🔍</button>
+          <input id="global-search-input" class="topbar-search-input" placeholder="Search artists, tracks, playlists..." />
+          <button id="global-search-btn" class="topbar-search-icon" title="Search" data-icon="search" data-icon-size="15"></button>
         </div>
 
         <div class="topbar-right">
@@ -54,11 +55,11 @@
             <span id="jam-dot" class="status-dot"></span>
             <span id="jam-btn-label">Jam</span>
           </button>
-          <button id="btn-top-games" class="topbar-pill" title="Play Chess & 21 Blackjack">🎮 Games</button>
+          <button id="btn-top-games" class="topbar-pill" title="Play Connect Four, Chess & 21 Blackjack" data-icon="gamepad" data-icon-size="15" data-icon-label="Games"></button>
           <button id="btn-top-vfd" class="topbar-pill vfd-chip" title="VFD Spectrum Visualizer (F)">VFD</button>
-          <button id="btn-theme-quick" class="topbar-icon-btn" title="Toggle Dark / Light Mode">🌙</button>
-          <button id="btn-sync-top" class="topbar-icon-btn" title="Sync SoundCloud Likes & Playlists">🔄</button>
-          <button id="btn-top-settings" class="topbar-icon-btn" title="Settings & Discord RPC">⚙️</button>
+          <button id="btn-theme-quick" class="topbar-icon-btn" title="Toggle Dark / Light Mode" data-icon="sun" data-icon-size="16"></button>
+          <button id="btn-sync-top" class="topbar-icon-btn" title="Sync SoundCloud Likes & Playlists" data-icon="sync" data-icon-size="15"></button>
+          <button id="btn-top-settings" class="topbar-icon-btn" title="Settings, Credits & Uninstall" data-icon="settings" data-icon-size="16"></button>
           <button id="btn-user-pill" class="user-avatar-btn" title="Account & Settings">
             <img id="top-user-avatar" src="" alt="" />
           </button>
@@ -71,9 +72,9 @@
       <div id="view-content" class="view-container"></div>
     </main>
 
-    <!-- Host-Lock Jam Notice Strip (Only shown when guest is locked) -->
+    <!-- Host-Lock Jam Notice Strip -->
     <div id="bar-lock-note" class="host-lock-strip hidden">
-      <span>🔒 Host controls playback in this Jam</span>
+      <span class="row-gap"><span data-icon="lock" data-icon-size="13"></span> Host controls playback in this Jam</span>
       <button id="btn-bar-resync" class="inline-link">Resync Now</button>
     </div>
 
@@ -81,7 +82,7 @@
     <div id="queue-drawer" class="queue-drawer hidden">
       <div class="queue-drawer-head">
         <span>Up Next (<span id="queue-count">0</span>)</span>
-        <button id="btn-close-queue" class="icon-btn">✕</button>
+        <button id="btn-close-queue" class="icon-btn" data-icon="close" data-icon-size="16"></button>
       </div>
       <div id="queue-drawer-list" class="queue-drawer-list"></div>
     </div>
@@ -90,15 +91,11 @@
     <footer class="sc-player-bar">
       <div class="sc-player-inner">
         <div class="sc-transport">
-          <button id="btn-prev" class="sc-ctrl-btn" title="Previous">
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2h2v12H3V2zm3 6l8-6v12L6 8z"/></svg>
-          </button>
-          <button id="btn-play" class="sc-play-circle" title="Play / Pause (Space)">▶</button>
-          <button id="btn-next" class="sc-ctrl-btn" title="Next">
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M11 2h2v12h-2V2zM2 2l8 6-8 6V2z"/></svg>
-          </button>
-          <button id="btn-shuffle" class="sc-ctrl-btn sm" title="Shuffle">🔀</button>
-          <button id="btn-repeat" class="sc-ctrl-btn sm" title="Repeat">🔁</button>
+          <button id="btn-prev" class="sc-ctrl-btn" title="Previous" data-icon="prev" data-icon-size="15"></button>
+          <button id="btn-play" class="sc-play-circle" title="Play / Pause (Space)"></button>
+          <button id="btn-next" class="sc-ctrl-btn" title="Next" data-icon="next" data-icon-size="15"></button>
+          <button id="btn-shuffle" class="sc-ctrl-btn sm" title="Shuffle" data-icon="shuffle" data-icon-size="15"></button>
+          <button id="btn-repeat" class="sc-ctrl-btn sm" title="Repeat" data-icon="repeat" data-icon-size="15"></button>
         </div>
 
         <div class="sc-timeline">
@@ -111,7 +108,7 @@
         </div>
 
         <div class="sc-volume">
-          <button id="btn-mute" class="sc-ctrl-btn sm" title="Mute / Unmute">🔊</button>
+          <button id="btn-mute" class="sc-ctrl-btn sm" title="Mute / Unmute" data-icon="volume" data-icon-size="15"></button>
           <input id="volume-slider" type="range" min="0" max="100" value="85" class="sc-vol-slider" />
         </div>
 
@@ -127,10 +124,10 @@
             </div>
           </div>
           <div class="sc-bar-actions">
-            <button id="bar-like" class="sc-ctrl-btn heart-btn" title="Like & Sync to SoundCloud">♡</button>
-            <button id="btn-jam-bar" class="sc-ctrl-btn" title="Group Jam">👥</button>
+            <button id="bar-like" class="sc-ctrl-btn heart-btn" title="Like & Sync to SoundCloud"></button>
+            <button id="btn-jam-bar" class="sc-ctrl-btn" title="Group Jam" data-icon="users" data-icon-size="15"></button>
             <button id="btn-vfd-bar" class="sc-vfd-mini" title="Fullscreen VFD Visualizer (F)">VFD</button>
-            <button id="btn-queue-toggle" class="sc-ctrl-btn" title="Up Next Queue">☰</button>
+            <button id="btn-queue-toggle" class="sc-ctrl-btn" title="Up Next Queue" data-icon="queue" data-icon-size="15"></button>
           </div>
         </div>
       </div>
@@ -143,21 +140,20 @@
     <div class="np-scrim"></div>
     <div class="np-inner">
       <div class="np-top">
-        <button id="btn-np-close" class="circle-btn" title="Close">⌄</button>
+        <button id="btn-np-close" class="circle-btn" title="Close" data-icon="chevronDown" data-icon-size="20"></button>
         <div class="np-style-group">
           <div class="style-pills">
-            <button class="style-pill" data-style="vinyl">💿 Vinyl</button>
-            <button class="style-pill" data-style="fullscreen">🖼 Full</button>
-            <button class="style-pill" data-style="card">🎴 Card</button>
+            <button class="style-pill" data-style="vinyl" data-icon="disc" data-icon-size="13" data-icon-label="Vinyl"></button>
+            <button class="style-pill" data-style="fullscreen" data-icon="image" data-icon-size="13" data-icon-label="Full"></button>
+            <button class="style-pill" data-style="card" data-icon="card" data-icon-size="13" data-icon-label="Card"></button>
           </div>
           <button id="btn-np-vfd" class="vfd-pill-btn">VFD</button>
           <button id="btn-np-jam" class="jam-badge-btn hidden">● JAM</button>
         </div>
-        <button id="btn-np-add-pl" class="circle-btn" title="Add to Playlist">＋</button>
+        <button id="btn-np-add-pl" class="circle-btn" title="Add to Playlist" data-icon="plus" data-icon-size="18"></button>
       </div>
 
       <div id="np-stage" class="np-stage">
-        <!-- Rotating Vinyl Record Player -->
         <div id="np-vinyl-wrap" class="vinyl-stage">
           <div class="vinyl-platter">
             <div id="vinyl-disc" class="vinyl-disc">
@@ -177,7 +173,6 @@
           </div>
         </div>
 
-        <!-- Ambient Card -->
         <div id="np-card-wrap" class="card-stage hidden">
           <img id="card-art" class="card-art" src="" alt="" />
         </div>
@@ -189,7 +184,7 @@
             <div id="np-title" class="np-title">—</div>
             <button id="np-artist" class="np-artist link-btn">—</button>
           </div>
-          <button id="np-like" class="icon-btn heart-btn big">♡</button>
+          <button id="np-like" class="icon-btn heart-btn big"></button>
         </div>
 
         <div class="scrubber-row">
@@ -198,14 +193,14 @@
           <span id="np-remaining" class="time-label">-0:00</span>
         </div>
 
-        <div id="np-lock-banner" class="host-lock-note center hidden">🔒 Host controls playback · <button id="btn-np-resync" class="inline-link">Tap to resync</button></div>
+        <div id="np-lock-banner" class="host-lock-note center hidden">Host controls playback · <button id="btn-np-resync" class="inline-link">Resync</button></div>
 
         <div class="transport-row big">
-          <button id="np-shuffle" class="icon-btn">🔀</button>
-          <button id="np-prev" class="icon-btn">⏮</button>
-          <button id="np-play" class="play-circle big">▶</button>
-          <button id="np-next" class="icon-btn">⏭</button>
-          <button id="np-repeat" class="icon-btn">🔁</button>
+          <button id="np-shuffle" class="icon-btn" data-icon="shuffle" data-icon-size="18"></button>
+          <button id="np-prev" class="icon-btn" data-icon="prev" data-icon-size="20"></button>
+          <button id="np-play" class="play-circle big"></button>
+          <button id="np-next" class="icon-btn" data-icon="next" data-icon-size="20"></button>
+          <button id="np-repeat" class="icon-btn" data-icon="repeat" data-icon-size="18"></button>
         </div>
       </div>
     </div>
@@ -214,12 +209,12 @@
   <!-- Fullscreen Customizable Hardware VFD Spectrum Visualizer -->
   <div id="vfd-overlay" class="overlay vfd-overlay hidden">
     <div id="vfd-hud-top" class="vfd-hud-top">
-      <button id="btn-vfd-close" class="circle-btn">✕</button>
+      <button id="btn-vfd-close" class="circle-btn" data-icon="close" data-icon-size="18"></button>
       <div class="vfd-track-meta">
         <div id="vfd-title" class="vfd-title">VFD Spectrum</div>
-        <div id="vfd-artist" class="vfd-artist">CloudWave</div>
+        <div id="vfd-artist" class="vfd-artist">SoundCloud S</div>
       </div>
-      <button id="btn-vfd-style-toggle" class="vfd-pill-btn">⚙ Style</button>
+      <button id="btn-vfd-style-toggle" class="vfd-pill-btn" data-icon="settings" data-icon-size="14" data-icon-label="Style"></button>
     </div>
 
     <div id="vfd-stage" class="vfd-stage">
@@ -254,11 +249,11 @@
     </div>
 
     <div id="vfd-hud-bottom" class="vfd-hud-bottom">
-      <button id="vfd-like" class="icon-btn heart-btn">♡</button>
+      <button id="vfd-like" class="icon-btn heart-btn"></button>
       <div class="transport-row">
-        <button id="vfd-prev" class="icon-btn">⏮</button>
-        <button id="vfd-play" class="play-circle vfd-play">▶</button>
-        <button id="vfd-next" class="icon-btn">⏭</button>
+        <button id="vfd-prev" class="icon-btn" data-icon="prev" data-icon-size="18"></button>
+        <button id="vfd-play" class="play-circle vfd-play"></button>
+        <button id="vfd-next" class="icon-btn" data-icon="next" data-icon-size="18"></button>
       </div>
       <span class="tiny muted">Click display to hide HUD · Esc to exit</span>
     </div>
@@ -275,10 +270,10 @@
   <!-- Floating Jam Reactions Layer -->
   <div id="reactions-layer" class="reactions-layer"></div>
 
-  <!-- No crossorigin attribute so SoundCloud CDN streams always play without CORS blocks -->
   <audio id="audio-player" preload="auto"></audio>
 
   <script src="../../node_modules/hls.js/dist/hls.min.js"></script>
+  <script src="icons.js"></script>
   <script src="jam.js"></script>
   <script src="games.js"></script>
   <script src="visualizer.js"></script>

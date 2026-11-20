@@ -348,8 +348,8 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("App", value: "CloudWave v3.0 (Native iOS & iPadOS)")
-                    LabeledContent("Based on", value: "richardhbtz/soundcloud-rpc (MIT)")
+                    LabeledContent("App", value: "SoundCloud S v3.1 (Native iOS & iPadOS)")
+                    LabeledContent("Based on", value: "SoundCloud RPC (richardhbtz/soundcloud-rpc · MIT)")
                 }
             }
             .sheet(isPresented: $showingJamSheet) {

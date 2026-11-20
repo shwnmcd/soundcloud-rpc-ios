@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 enum MiniGameTab: String, CaseIterable, Identifiable {
+    case connect4 = "Connect 4"
     case chess = "Chess"
     case blackjack = "21 Blackjack"
     var id: String { rawValue }
@@ -12,6 +13,22 @@ private struct ChessWireState: Codable {
     let turn: String    // "w" or "b"
     let lastFrom: Int?
     let lastTo: Int?
+    let whiteId: String?
+    let whiteName: String?
+    let blackId: String?
+    let blackName: String?
+}
+
+private struct Connect4WireState: Codable {
+    let board: [Int]    // 42 cells (6x7): 0=empty, 1=Red, 2=Gold
+    let turn: Int       // 1 or 2
+    let lastMove: Int?
+    let winner: Int     // 0=playing, 1=Red, 2=Gold, 3=Draw
+    let winCells: [Int]
+    let redId: String?
+    let redName: String?
+    let goldId: String?
+    let goldName: String?
 }
 
 struct JamGamesSheet: View {
@@ -19,7 +36,7 @@ struct JamGamesSheet: View {
     @Environment(\.scTheme) private var theme
     @EnvironmentObject var jam: JamSessionService
 
-    @State private var selectedGame: MiniGameTab = .chess
+    @State private var selectedGame: MiniGameTab = .connect4
 
     var body: some View {
         NavigationStack {
@@ -34,7 +51,10 @@ struct JamGamesSheet: View {
                 .padding(.top, 6)
 
                 ScrollView(showsIndicators: false) {
-                    if selectedGame == .chess {
+                    if selectedGame == .connect4 {
+                        Connect4MiniGameView()
+                            .padding(.horizontal, 14)
+                    } else if selectedGame == .chess {
                         ChessMiniGameView()
                             .padding(.horizontal, 14)
                     } else {
@@ -44,7 +64,7 @@ struct JamGamesSheet: View {
                 }
             }
             .background(theme.bg.ignoresSafeArea())
-            .navigationTitle(jam.isActive ? "Jam Games · \(jam.roomCode)" : "CloudWave Games")
+            .navigationTitle(jam.isActive ? "Jam Arcade · \(jam.roomCode)" : "SoundCloud S Arcade")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -53,6 +73,326 @@ struct JamGamesSheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Reusable Jam Opponent Picker (Play Against Anyone Connected to the Jam!)
+private struct JamOpponentPickerBar: View {
+    @Environment(\.scTheme) private var theme
+    @EnvironmentObject var jam: JamSessionService
+
+    let vsBot: Bool
+    let activeOpponentId: String?
+    let onSelect: (_ opponentId: String, _ opponentName: String, _ isBot: Bool) -> Void
+
+    private var others: [JamParticipant] {
+        jam.participants.filter { $0.id != jam.localClientId }
+    }
+
+    var body: some View {
+        if jam.isActive {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Text("Play vs:")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(theme.textSecondary)
+
+                    pillButton(title: "Open Jam Table", active: !vsBot && (activeOpponentId == nil || activeOpponentId == "*")) {
+                        onSelect("*", "Anyone in Jam", false)
+                    }
+
+                    ForEach(others) { p in
+                        pillButton(title: (p.isHost ? "★ " : "") + p.name, active: !vsBot && activeOpponentId == p.id) {
+                            onSelect(p.id, p.name, false)
+                        }
+                    }
+
+                    pillButton(title: "Bot", active: vsBot) {
+                        onSelect("bot", "SoundCloud S Bot", true)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
+            .background(theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private func pillButton(title: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.bold))
+                .foregroundColor(active ? .white : theme.textSecondary)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(active ? theme.accent : theme.surfaceElevated)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(SpringPressButtonStyle())
+    }
+}
+
+// MARK: - Connect Four (7x6 Interactive + Jam Multiplayer + Smart Bot)
+struct Connect4MiniGameView: View {
+    @Environment(\.scTheme) private var theme
+    @EnvironmentObject var jam: JamSessionService
+
+    @State private var board: [Int] = Array(repeating: 0, count: 42)
+    @State private var turn: Int = 1
+    @State private var lastMove: Int? = nil
+    @State private var winner: Int = 0
+    @State private var winCells: [Int] = []
+    @State private var vsBot: Bool = false
+    @State private var redId: String? = nil
+    @State private var redName: String = "Red"
+    @State private var goldId: String? = "*"
+    @State private var goldName: String = "Anyone in Jam"
+    @State private var redScore: Int = 0
+    @State private var goldScore: Int = 0
+
+    private var isMultiplayer: Bool { jam.isActive && !vsBot }
+
+    private var mySeat: Int {
+        if !isMultiplayer { return 1 }
+        let me = jam.localClientId
+        if redId == me { return 1 }
+        if goldId == me { return 2 }
+        if redId == nil { return 1 }
+        if goldId == nil || goldId == "*" { return 2 }
+        return 0
+    }
+
+    private var statusLine: String {
+        let rLabel = isMultiplayer ? redName : jam.localDisplayName
+        let gLabel = isMultiplayer ? goldName : "SoundCloud S Bot"
+        if winner == 1 { return "\(rLabel) Wins!" }
+        if winner == 2 { return "\(gLabel) Wins!" }
+        if winner == 3 { return "Draw Game!" }
+        return "\(turn == 1 ? rLabel : gLabel) to drop"
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            JamOpponentPickerBar(
+                vsBot: vsBot,
+                activeOpponentId: goldId == jam.localClientId ? redId : goldId
+            ) { oppId, oppName, isBot in
+                startMatch(opponentId: oppId, opponentName: oppName, bot: isBot)
+            }
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusLine)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(theme.textPrimary)
+                    Text("Red \(redScore) · Gold \(goldScore)")
+                        .font(.caption)
+                        .foregroundColor(theme.textSecondary)
+                }
+                Spacer()
+                Button {
+                    startMatch(opponentId: goldId ?? "*", opponentName: goldName, bot: vsBot)
+                } label: {
+                    Text("New Game")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(theme.accent)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(SpringPressButtonStyle())
+            }
+            .padding(12)
+            .background(theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            // 7x6 Royal Blue Connect Four Board
+            let winSet = Set(winCells)
+            VStack(spacing: 7) {
+                ForEach(0..<6, id: \.self) { row in
+                    HStack(spacing: 7) {
+                        ForEach(0..<7, id: \.self) { col in
+                            let idx = row * 7 + col
+                            let val = board[idx]
+                            let isWin = winSet.contains(idx)
+                            let isLast = lastMove == idx
+
+                            Button {
+                                dropDisc(in: col)
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.black.opacity(0.55))
+                                    if val == 1 {
+                                        Circle()
+                                            .fill(RadialGradient(colors: [Color(red: 1.0, green: 0.48, blue: 0.36), Color(red: 0.85, green: 0.16, blue: 0.14)], center: .topLeading, startRadius: 2, endRadius: 26))
+                                            .padding(2)
+                                    } else if val == 2 {
+                                        Circle()
+                                            .fill(RadialGradient(colors: [Color(red: 1.0, green: 0.94, blue: 0.52), Color(red: 0.92, green: 0.68, blue: 0.04)], center: .topLeading, startRadius: 2, endRadius: 26))
+                                            .padding(2)
+                                    }
+                                    if isWin || isLast {
+                                        Circle()
+                                            .stroke(Color.white, lineWidth: isWin ? 3 : 1.5)
+                                            .padding(2)
+                                    }
+                                }
+                                .aspectRatio(1, contentMode: .fit)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(10)
+            .background(LinearGradient(colors: [Color(red: 0.11, green: 0.30, blue: 0.72), Color(red: 0.07, green: 0.21, blue: 0.54)], startPoint: .top, endPoint: .bottom))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color(red: 0.22, green: 0.45, blue: 0.92), lineWidth: 2))
+        }
+        .onChange(of: jam.latestConnect4Payload) { newPayload in
+            guard let json = newPayload, !vsBot,
+                  let data = json.data(using: .utf8),
+                  let w = try? JSONDecoder().decode(Connect4WireState.self, from: data),
+                  w.board.count == 42 else { return }
+            board = w.board
+            turn = w.turn == 2 ? 2 : 1
+            lastMove = w.lastMove
+            winner = w.winner
+            winCells = w.winCells
+            redId = w.redId
+            if let rn = w.redName { redName = rn }
+            goldId = w.goldId ?? "*"
+            if let gn = w.goldName { goldName = gn }
+            if winner == 1 { redScore += 1 }
+            else if winner == 2 { goldScore += 1 }
+        }
+    }
+
+    private func startMatch(opponentId: String, opponentName: String, bot: Bool) {
+        vsBot = bot
+        board = Array(repeating: 0, count: 42)
+        turn = 1
+        lastMove = nil
+        winner = 0
+        winCells = []
+        if isMultiplayer {
+            redId = jam.localClientId
+            redName = jam.localDisplayName
+            goldId = opponentId
+            goldName = opponentId == "*" ? "Anyone in Jam" : opponentName
+            broadcastState()
+        } else {
+            redId = jam.localClientId
+            redName = jam.localDisplayName
+            goldId = "bot"
+            goldName = "SoundCloud S Bot"
+        }
+    }
+
+    private func dropDisc(in col: Int) {
+        guard winner == 0, col >= 0, col < 7 else { return }
+        if isMultiplayer {
+            let seat = mySeat
+            guard seat != 0, seat == turn else { return }
+            if seat == 1 && redId == nil {
+                redId = jam.localClientId
+                redName = jam.localDisplayName
+            } else if seat == 2 && (goldId == nil || goldId == "*") {
+                goldId = jam.localClientId
+                goldName = jam.localDisplayName
+            }
+        } else if turn != 1 {
+            return
+        }
+
+        guard let row = Self.lowestEmptyRow(board: board, col: col) else { return }
+        applyMove(idx: row * 7 + col, player: turn, broadcast: isMultiplayer)
+
+        if !isMultiplayer && winner == 0 && turn == 2 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) {
+                makeBotDrop()
+            }
+        }
+    }
+
+    private func applyMove(idx: Int, player: Int, broadcast: Bool) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        board[idx] = player
+        lastMove = idx
+        if let win = Self.checkWin(board: board, player: player) {
+            winner = player
+            winCells = win
+            if player == 1 { redScore += 1 } else { goldScore += 1 }
+        } else if !board.contains(0) {
+            winner = 3
+            winCells = []
+        } else {
+            turn = (player == 1) ? 2 : 1
+        }
+        if broadcast { broadcastState() }
+    }
+
+    private func makeBotDrop() {
+        guard winner == 0 && turn == 2 else { return }
+        let validCols = (0..<7).filter { Self.lowestEmptyRow(board: board, col: $0) != nil }
+        guard !validCols.isEmpty else { return }
+
+        for c in validCols {
+            if let r = Self.lowestEmptyRow(board: board, col: c) {
+                var copy = board; copy[r * 7 + c] = 2
+                if Self.checkWin(board: copy, player: 2) != nil { applyMove(idx: r * 7 + c, player: 2, broadcast: false); return }
+            }
+        }
+        for c in validCols {
+            if let r = Self.lowestEmptyRow(board: board, col: c) {
+                var copy = board; copy[r * 7 + c] = 1
+                if Self.checkWin(board: copy, player: 1) != nil { applyMove(idx: r * 7 + c, player: 2, broadcast: false); return }
+            }
+        }
+        let sorted = validCols.sorted { abs(3 - $0) < abs(3 - $1) }
+        let chosen = sorted.first ?? validCols[0]
+        if let r = Self.lowestEmptyRow(board: board, col: chosen) {
+            applyMove(idx: r * 7 + chosen, player: 2, broadcast: false)
+        }
+    }
+
+    private func broadcastState() {
+        guard isMultiplayer else { return }
+        let wire = Connect4WireState(
+            board: board, turn: turn, lastMove: lastMove, winner: winner,
+            winCells: winCells, redId: redId, redName: redName, goldId: goldId, goldName: goldName
+        )
+        if let data = try? JSONEncoder().encode(wire), let str = String(data: data, encoding: .utf8) {
+            jam.sendConnect4State(str)
+        }
+    }
+
+    private static func lowestEmptyRow(board: [Int], col: Int) -> Int? {
+        for r in stride(from: 5, through: 0, by: -1) {
+            if board[r * 7 + col] == 0 { return r }
+        }
+        return nil
+    }
+
+    private static func checkWin(board: [Int], player: Int) -> [Int]? {
+        let dirs = [(0, 1), (1, 0), (1, 1), (1, -1)]
+        for r in 0..<6 {
+            for c in 0..<7 where board[r * 7 + c] == player {
+                for (dr, dc) in dirs {
+                    var cells = [r * 7 + c]
+                    for k in 1..<4 {
+                        let nr = r + dr * k, nc = c + dc * k
+                        if nr < 0 || nr >= 6 || nc < 0 || nc >= 7 || board[nr * 7 + nc] != player { break }
+                        cells.append(nr * 7 + nc)
+                    }
+                    if cells.count == 4 { return cells }
+                }
+            }
+        }
+        return nil
     }
 }
 
@@ -69,22 +409,50 @@ struct ChessMiniGameView: View {
     @State private var lastTo: Int? = nil
     @State private var vsBot: Bool = false
     @State private var statusText: String = "White to move"
+    @State private var whiteId: String? = nil
+    @State private var whiteName: String = "White"
+    @State private var blackId: String? = "*"
+    @State private var blackName: String = "Anyone in Jam"
 
     private var myColor: String {
         if !jam.isActive || vsBot { return "w" }
-        return jam.isHost ? "w" : "b"
+        let me = jam.localClientId
+        if whiteId == me { return "w" }
+        if blackId == me { return "b" }
+        if whiteId == nil { return jam.isHost ? "w" : "b" }
+        if blackId == nil || blackId == "*" { return "b" }
+        return ""
     }
 
     var body: some View {
         VStack(spacing: 12) {
+            JamOpponentPickerBar(
+                vsBot: vsBot,
+                activeOpponentId: blackId == jam.localClientId ? whiteId : blackId
+            ) { oppId, oppName, isBot in
+                vsBot = isBot
+                if !isBot && jam.isActive {
+                    whiteId = jam.localClientId
+                    whiteName = jam.localDisplayName
+                    blackId = oppId
+                    blackName = oppId == "*" ? "Anyone in Jam" : oppName
+                } else {
+                    whiteId = jam.localClientId
+                    whiteName = jam.localDisplayName
+                    blackId = "bot"
+                    blackName = "SoundCloud S Bot"
+                }
+                resetBoard(broadcast: !isBot)
+            }
+
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(statusText)
                         .font(.subheadline.weight(.bold))
                         .foregroundColor(theme.textPrimary)
                     Text(jam.isActive && !vsBot
-                         ? "Multiplayer Jam · You are \(myColor == "w" ? "White (Host)" : "Black (Guest)")"
-                         : "Solo vs CloudWave Bot (You are White)")
+                         ? "♔ \(whiteName) vs ♚ \(blackName)"
+                         : "Solo vs SoundCloud S Bot (You are White)")
                         .font(.caption)
                         .foregroundColor(theme.textSecondary)
                 }
@@ -105,13 +473,6 @@ struct ChessMiniGameView: View {
             .padding(12)
             .background(theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            if jam.isActive {
-                Toggle("Play Solo vs Bot instead of Jam Opponent", isOn: $vsBot)
-                    .font(.caption.weight(.semibold))
-                    .tint(theme.accent)
-                    .padding(.horizontal, 6)
-            }
 
             // 8x8 Interactive Board
             GeometryReader { geo in
@@ -176,6 +537,10 @@ struct ChessMiniGameView: View {
             turn = wire.turn
             lastFrom = wire.lastFrom
             lastTo = wire.lastTo
+            if let wid = wire.whiteId { whiteId = wid }
+            if let wn = wire.whiteName { whiteName = wn }
+            if let bid = wire.blackId { blackId = bid }
+            if let bn = wire.blackName { blackName = bn }
             selectedSquare = nil
             legalTargets = []
             updateStatus()
@@ -233,7 +598,17 @@ struct ChessMiniGameView: View {
         updateStatus()
 
         if broadcast {
-            let wire = ChessWireState(board: board, turn: turn, lastFrom: from, lastTo: to)
+            if myColor == "w" && whiteId == nil {
+                whiteId = jam.localClientId
+                whiteName = jam.localDisplayName
+            } else if myColor == "b" && (blackId == nil || blackId == "*") {
+                blackId = jam.localClientId
+                blackName = jam.localDisplayName
+            }
+            let wire = ChessWireState(
+                board: board, turn: turn, lastFrom: from, lastTo: to,
+                whiteId: whiteId, whiteName: whiteName, blackId: blackId, blackName: blackName
+            )
             if let data = try? JSONEncoder().encode(wire), let str = String(data: data, encoding: .utf8) {
                 jam.sendChessState(str)
             }
@@ -268,7 +643,10 @@ struct ChessMiniGameView: View {
         lastTo = nil
         updateStatus()
         if broadcast && jam.isActive && !vsBot {
-            let wire = ChessWireState(board: board, turn: "w", lastFrom: nil, lastTo: nil)
+            let wire = ChessWireState(
+                board: board, turn: "w", lastFrom: nil, lastTo: nil,
+                whiteId: whiteId, whiteName: whiteName, blackId: blackId, blackName: blackName
+            )
             if let data = try? JSONEncoder().encode(wire), let str = String(data: data, encoding: .utf8) {
                 jam.sendChessState(str)
             }

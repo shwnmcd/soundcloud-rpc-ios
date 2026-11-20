@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, session, shell, Tray, Menu, globalShortcut, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const { DiscordRPCClient } = require('./discord-rpc');
 const { SoundCloudDesktopAPI } = require('./soundcloud-api');
 const { IntegrationsService } = require('./integrations');
@@ -44,9 +45,22 @@ let pendingDeepLink = null;
 
 const configPath = () => path.join(app.getPath('userData'), 'config.json');
 
+// Earlier builds were named "CloudWave" / "SoundCloud RPC" — carry their sign-in & settings over once.
+function readLegacyConfigRaw() {
+  const legacyNames = ['CloudWave', 'SoundCloud RPC', 'cloudwave-desktop', 'soundcloud-rpc-desktop'];
+  for (const name of legacyNames) {
+    try {
+      const p = path.join(app.getPath('appData'), name, 'config.json');
+      if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+    } catch {}
+  }
+  return null;
+}
+
 function loadStore() {
   try {
-    const raw = fs.readFileSync(configPath(), 'utf8');
+    let raw = null;
+    try { raw = fs.readFileSync(configPath(), 'utf8'); } catch { raw = readLegacyConfigRaw(); }
     const parsed = JSON.parse(raw);
     return {
       auth: parsed.auth || { oauthToken: '', clientId: '' },
@@ -72,12 +86,10 @@ const rpc = new DiscordRPCClient(DEFAULT_SETTINGS.discordClientId);
 const integrations = new IntegrationsService();
 const scApi = new SoundCloudDesktopAPI(() => store.auth);
 
-// Register cloudwave:// and legacy soundcloudrpc:// deep link protocols on Windows
+// Register soundcloudrpc:// Jam invite deep links (shared with iOS & Android)
 if (process.defaultApp && process.argv.length >= 2) {
-  app.setAsDefaultProtocolClient('cloudwave', process.execPath, [path.resolve(process.argv[1])]);
   app.setAsDefaultProtocolClient('soundcloudrpc', process.execPath, [path.resolve(process.argv[1])]);
 } else {
-  app.setAsDefaultProtocolClient('cloudwave');
   app.setAsDefaultProtocolClient('soundcloudrpc');
 }
 
@@ -110,9 +122,9 @@ function createTrayIcon() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#FF5500"/><path d="M18 38V28M25 42V22M32 45V19M39 42V24M46 38V30" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round"/></svg>`;
   const img = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
   tray = new Tray(img.resize({ width: 16, height: 16 }));
-  tray.setToolTip('CloudWave Desktop');
+  tray.setToolTip('SoundCloud S');
   const menu = Menu.buildFromTemplate([
-    { label: 'Show CloudWave', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+    { label: 'Show SoundCloud S', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
     { type: 'separator' },
     { label: 'Play / Pause', click: () => mainWindow?.webContents.send('media-command', 'play-pause') },
     { label: 'Next Track', click: () => mainWindow?.webContents.send('media-command', 'next') },
@@ -139,7 +151,7 @@ function createMainWindow() {
     backgroundColor: '#111111',
     icon: appIcon,
     autoHideMenuBar: true,
-    title: 'CloudWave',
+    title: 'SoundCloud S',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -342,6 +354,33 @@ function registerIPC() {
       return { ok: false, error: String(err?.message || err) };
     }
   });
+
+  // Install info + in-app uninstall (NSIS places "Uninstall SoundCloud S.exe" next to the app)
+  const uninstallerPath = () => path.join(path.dirname(process.execPath), `Uninstall ${app.getName()}.exe`);
+
+  ipcMain.handle('app:info', () => ({
+    version: app.getVersion(),
+    installDir: path.dirname(process.execPath),
+    isInstalled: app.isPackaged && fs.existsSync(uninstallerPath())
+  }));
+
+  ipcMain.handle('app:uninstall', () => {
+    const exe = uninstallerPath();
+    if (!app.isPackaged || !fs.existsSync(exe)) {
+      return { ok: false, error: 'Uninstaller not found (portable or dev build).' };
+    }
+    try {
+      spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
+      isQuitting = true;
+      rpc.clearActivity();
+      setTimeout(() => app.quit(), 400);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) };
+    }
+  });
+
+  ipcMain.handle('app:showInstallFolder', () => shell.openPath(path.dirname(process.execPath)));
 }
 
 app.whenReady().then(() => {
@@ -358,7 +397,7 @@ app.whenReady().then(() => {
   rpc.connect(0);
 
   // Check command-line deep link on first launch
-  const initialDeep = process.argv.find((a) => typeof a === 'string' && /^(cloudwave|soundcloudrpc):\/\//i.test(a));
+  const initialDeep = process.argv.find((a) => typeof a === 'string' && /^soundcloudrpc:\/\//i.test(a));
   if (initialDeep) handleDeepLink(initialDeep);
 
   // Register global Windows Media Keys

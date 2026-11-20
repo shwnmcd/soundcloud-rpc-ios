@@ -83,6 +83,17 @@ button {
 button:active { transform: scale(0.97); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 input { font-family: inherit; color: var(--text); }
+.ic { display: inline-block; vertical-align: middle; flex-shrink: 0; }
+.brand-s { color: var(--accent); font-weight: 900; }
+.rpc-credit-pill {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(255, 85, 0, 0.32);
+  padding: 4px 12px;
+  border-radius: 99px;
+}
 
 /* ===== Sign-In Overlay ===== */
 .signin-screen {
@@ -1424,20 +1435,20 @@ body[data-theme="light"] .sc-play-circle {
 }
 .swatch-btn.active { border-color: var(--text); transform: scale(1.12); }
 
-/* ===== Mini-Games UI (Chess & 21 Blackjack) ===== */
+/* ===== Mini-Games UI (Connect Four, Chess & 21 Blackjack) ===== */
 .game-tabs {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   background: var(--surface-2);
   padding: 4px;
   border-radius: 8px;
 }
 .game-tab {
   flex: 1;
-  padding: 8px;
+  padding: 8px 6px;
   border-radius: 6px;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-sub);
 }
 .game-tab.active {
@@ -1445,6 +1456,163 @@ body[data-theme="light"] .sc-play-circle {
   color: #ffffff;
 }
 
+.opponent-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 11px;
+}
+.opponent-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-sub);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.opponent-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.opp-pill {
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: var(--bg);
+  color: var(--text-sub);
+  border: 1px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.opp-pill:hover { color: var(--text); }
+.opp-pill.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+.game-scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.score-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  max-width: 155px;
+}
+.score-pill.turn {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.score-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score-num {
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--bg);
+  font-variant-numeric: tabular-nums;
+}
+.score-status {
+  font-size: 12.5px;
+  font-weight: 800;
+  text-align: center;
+  flex: 1;
+}
+.disc-swatch {
+  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+}
+.disc-swatch.red { background: radial-gradient(circle at 35% 30%, #ff7b54, #e53935); }
+.disc-swatch.gold { background: radial-gradient(circle at 35% 30%, #fff08a, #f5b301); }
+
+/* Connect Four 3D Board */
+.c4-shell {
+  width: 100%;
+  max-width: 452px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.c4-drop-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  padding: 0 10px;
+}
+.c4-drop-btn {
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  opacity: 0.55;
+}
+.c4-drop-btn:hover { opacity: 1; background: var(--surface-2); }
+.c4-drop-btn.red:hover { color: #ff5533; }
+.c4-drop-btn.gold:hover { color: #f5b301; }
+
+.c4-board {
+  background: linear-gradient(180deg, #1b4db8, #123688);
+  border: 2px solid #2b63db;
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.c4-slot {
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: rgba(8, 12, 26, 0.72);
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+}
+.c4-slot:hover { background: rgba(18, 28, 56, 0.85); }
+.c4-disc {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+  transition: transform 0.16s ease;
+}
+.c4-disc.empty { background: transparent; }
+.c4-disc.red {
+  background: radial-gradient(circle at 32% 28%, #ff8a65 0%, #ef3e2f 55%, #b51d14 100%);
+  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+.c4-disc.gold {
+  background: radial-gradient(circle at 32% 28%, #fff6a6 0%, #f7be16 55%, #bf8300 100%);
+  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+.c4-disc.last { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), inset 0 -3px 6px rgba(0, 0, 0, 0.3); }
+.c4-disc.win {
+  box-shadow: 0 0 0 3px #ffffff, 0 0 16px rgba(255, 255, 255, 0.9);
+  transform: scale(1.06);
+}
+
+/* Chess Board with Coordinates & Captured Tray */
 .chess-header {
   display: flex;
   align-items: center;
@@ -1452,16 +1620,34 @@ body[data-theme="light"] .sc-play-circle {
   gap: 10px;
 }
 .chess-status { font-size: 14.5px; font-weight: 800; }
-.chess-board {
+.captured-strip {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-sub);
+  background: var(--surface-2);
+  padding: 5px 10px;
+  border-radius: 6px;
+}
+.captured-strip b { color: var(--text); letter-spacing: 1px; font-size: 13px; }
+
+.chess-board-frame {
   width: 100%;
   max-width: 448px;
   margin: 0 auto;
+  padding: 6px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #3c2a1e, #241810);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.5);
+}
+.chess-board {
+  width: 100%;
   aspect-ratio: 1 / 1;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   grid-template-rows: repeat(8, 1fr);
-  border: 2px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: 5px;
   overflow: hidden;
 }
 .chess-sq {
@@ -1471,18 +1657,30 @@ body[data-theme="light"] .sc-play-circle {
   justify-content: center;
   padding: 0;
 }
-.chess-sq.light { background: #e8cfa6; }
-.chess-sq.dark  { background: #9c6b43; }
-.chess-sq.last-move { box-shadow: inset 0 0 0 99px rgba(255, 200, 40, 0.35); }
+.chess-sq.light { background: #ead4b0; }
+.chess-sq.dark  { background: #9b6a42; }
+.chess-sq.last-move { box-shadow: inset 0 0 0 99px rgba(255, 210, 60, 0.38); }
 .chess-sq.selected  { box-shadow: inset 0 0 0 99px rgba(255, 85, 0, 0.52); }
+.sq-coord {
+  position: absolute;
+  font-size: 9px;
+  font-weight: 800;
+  opacity: 0.72;
+  pointer-events: none;
+}
+.chess-sq.light .sq-coord { color: #7a5230; }
+.chess-sq.dark .sq-coord  { color: #ead4b0; }
+.sq-coord.rank { top: 2px; left: 3px; }
+.sq-coord.file { bottom: 1px; right: 3px; }
+
 .chess-piece {
   font-size: clamp(22px, 4vw, 34px);
   line-height: 1;
   position: relative;
   z-index: 2;
 }
-.chess-piece.white-piece { color: #ffffff; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
-.chess-piece.black-piece { color: #151518; text-shadow: 0 1px 1px rgba(255,255,255,0.3); }
+.chess-piece.white-piece { color: #ffffff; text-shadow: 0 2px 3px rgba(0,0,0,0.85); }
+.chess-piece.black-piece { color: #141418; text-shadow: 0 1px 1px rgba(255,255,255,0.35); }
 .chess-dot {
   position: absolute;
   width: 12px; height: 12px; border-radius: 50%;
@@ -1490,18 +1688,18 @@ body[data-theme="light"] .sc-play-circle {
 }
 .chess-capture-ring {
   position: absolute; inset: 3px; border-radius: 50%;
-  border: 3px solid rgba(255, 59, 48, 0.8);
+  border: 3px solid rgba(255, 59, 48, 0.85);
 }
 
 /* 21 Blackjack Felt Table */
 .bj-topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
 }
-.bj-bank { font-size: 15px; }
+.bj-bank { font-size: 14.5px; }
 .bj-bank b { color: #30d158; font-size: 17px; }
 .bj-bet-chips { display: flex; gap: 6px; }
 .bj-table {
-  background: radial-gradient(circle at top, #17663d, #0c3d24);
+  background: radial-gradient(circle at top, #186b40, #0c3d24);
   border: 2px solid #248a54;
   border-radius: 12px;
   padding: 18px;
@@ -1509,33 +1707,51 @@ body[data-theme="light"] .sc-play-circle {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.3);
 }
 .bj-zone { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .bj-zone-label { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; opacity: 0.85; }
-.bj-cards { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; min-height: 78px; align-items: center; }
+.bj-cards { display: flex; gap: 9px; flex-wrap: wrap; justify-content: center; min-height: 86px; align-items: center; }
 .bj-card {
-  width: 56px; height: 78px; border-radius: 7px;
+  position: relative;
+  width: 60px; height: 84px; border-radius: 8px;
   background: #ffffff; color: #111111;
-  box-shadow: 0 6px 14px rgba(0,0,0,0.4);
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.42);
+  display: flex; align-items: center; justify-content: center;
   font-weight: 900;
 }
 .bj-card.red { color: #d92626; }
 .bj-card.back {
   background: repeating-linear-gradient(45deg, #ff5500, #ff5500 6px, #c43e00 6px, #c43e00 12px);
   color: #ffffff; border: 2px solid #ffffff;
+  font-size: 20px;
 }
-.bj-rank { font-size: 18px; line-height: 1; }
-.bj-suit { font-size: 20px; line-height: 1.1; }
+.bj-corner {
+  position: absolute; font-size: 11px; line-height: 1.05; font-weight: 800;
+}
+.bj-corner.tl { top: 5px; left: 6px; text-align: center; }
+.bj-corner.br { bottom: 5px; right: 6px; }
+.bj-center-suit { font-size: 24px; opacity: 0.9; }
 .bj-banner {
   text-align: center;
-  background: rgba(0,0,0,0.3);
+  background: rgba(0,0,0,0.34);
   border-radius: 8px;
   padding: 8px 12px;
   font-weight: 700;
   font-size: 13.5px;
 }
 .bj-controls { display: flex; gap: 8px; }
+
+.install-path-box {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-sub);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  word-break: break-all;
+}
 
 /* ===== Toast & Floating Jam Reactions ===== */
 .toast {

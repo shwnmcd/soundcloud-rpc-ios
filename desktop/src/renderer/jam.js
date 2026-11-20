@@ -1,6 +1,6 @@
 /**
- * CloudWave Worldwide Real-Time Group Listening ("Jam") & Mini-Game Sync Engine
- * 100% wire-compatible with CloudWave iOS (.ipa) & Android (.apk)!
+ * SoundCloud S Worldwide Group Listening ("Jam") & Multiplayer Game Sync Engine
+ * Wire-compatible with SoundCloud S for iOS & Android.
  */
 class DesktopJamManager {
   constructor(hooks) {
@@ -23,8 +23,7 @@ class DesktopJamManager {
     this.reconnectAttempt = 0;
 
     // Cross-platform Multiplayer Mini-Game Sync
-    this.latestChessPayload = null;
-    this.latestBlackjackEvent = null;
+    this.gameMatches = new Map(); // matchId -> match (Chess / Connect Four)
     this.blackjackFeed = [];
   }
 
@@ -40,12 +39,24 @@ class DesktopJamManager {
     return Math.max(1, this.participants.length);
   }
 
+  get myId() {
+    return this.clientId;
+  }
+
+  get myName() {
+    return this.hooks.getDisplayName();
+  }
+
+  get otherParticipants() {
+    return this.participants.filter((p) => p.id !== this.clientId);
+  }
+
   get inviteLink() {
-    return this.roomCode ? `cloudwave://jam/${this.roomCode}` : '';
+    return this.roomCode ? `soundcloudrpc://jam/${this.roomCode}` : '';
   }
 
   get shareText() {
-    return `Join my CloudWave Jam! Open CloudWave and enter code ${this.roomCode} or tap: ${this.inviteLink}`;
+    return `Join my Jam on SoundCloud S! Open SoundCloud S and enter code ${this.roomCode} or tap: ${this.inviteLink}`;
   }
 
   get relayBase() {
@@ -182,8 +193,7 @@ class DesktopJamManager {
     this.sharedQueue = [];
     this.statusNote = '';
     this.lastNtfyId = null;
-    this.latestChessPayload = null;
-    this.latestBlackjackEvent = null;
+    this.gameMatches = new Map();
     this.blackjackFeed = [];
     this.hooks.onUpdate();
 
@@ -230,6 +240,11 @@ class DesktopJamManager {
   sendChessState(jsonString) {
     if (!this.isActive) return;
     this.publish('game_chess', { gameData: jsonString });
+  }
+
+  sendConnect4State(jsonString) {
+    if (!this.isActive) return;
+    this.publish('game_connect4', { gameData: jsonString });
   }
 
   sendBlackjackUpdate(jsonString) {
@@ -438,13 +453,16 @@ class DesktopJamManager {
         break;
       case 'game_chess':
         if (ev.gameData) {
-          this.latestChessPayload = ev.gameData;
-          this.hooks.onChessRemote?.(ev.gameData, ev.senderName);
+          this.hooks.onChessRemote?.(ev.gameData, ev.senderName, ev.senderId);
+        }
+        break;
+      case 'game_connect4':
+        if (ev.gameData) {
+          this.hooks.onConnect4Remote?.(ev.gameData, ev.senderName, ev.senderId);
         }
         break;
       case 'game_blackjack':
         if (ev.gameData) {
-          this.latestBlackjackEvent = { senderName: ev.senderName, payload: ev.gameData };
           try {
             const parsed = JSON.parse(ev.gameData);
             const summary = parsed?.summary ? `${ev.senderName}: ${parsed.summary}` : `${ev.senderName} played a hand`;

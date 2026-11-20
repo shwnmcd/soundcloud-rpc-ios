@@ -1,4 +1,4 @@
-name: Build CloudWave
+name: Build SoundCloud S
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         working-directory: desktop
         run: npm install --no-audit --no-fund
 
-      - name: Build Portable Windows App
+      - name: Build Windows Installer (Choose Folder + Uninstaller)
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -34,11 +34,11 @@ jobs:
         shell: pwsh
         run: Get-ChildItem dist\*.exe
 
-      - name: Upload CloudWave-Windows
+      - name: Upload SoundCloud-S-Windows
         uses: actions/upload-artifact@v4
         with:
-          name: CloudWave-Windows
-          path: desktop/dist/CloudWave.exe
+          name: SoundCloud-S-Windows
+          path: desktop/dist/SoundCloud-S-Setup.exe
           retention-days: 30
 
   build-ios:
@@ -72,20 +72,20 @@ jobs:
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             build
 
-      - name: Package CloudWave.ipa
+      - name: Package SoundCloud-S.ipa
         working-directory: ios
         run: |
           mkdir -p dist/Payload
           cp -r build/Build/Products/Release-iphoneos/SoundCloudRPC.app dist/Payload/
           cd dist
-          zip -r -y CloudWave.ipa Payload
-          ls -lh CloudWave.ipa
+          zip -r -y SoundCloud-S.ipa Payload
+          ls -lh SoundCloud-S.ipa
 
-      - name: Upload CloudWave-iOS
+      - name: Upload SoundCloud-S-iOS
         uses: actions/upload-artifact@v4
         with:
-          name: CloudWave-iOS
-          path: ios/dist/CloudWave.ipa
+          name: SoundCloud-S-iOS
+          path: ios/dist/SoundCloud-S.ipa
           retention-days: 30
 
   build-android:
@@ -111,16 +111,16 @@ jobs:
         working-directory: android
         run: gradle assembleRelease --no-daemon
 
-      - name: Package CloudWave.apk
+      - name: Package SoundCloud-S.apk
         working-directory: android
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/CloudWave.apk
-          ls -lh dist/CloudWave.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/SoundCloud-S.apk
+          ls -lh dist/SoundCloud-S.apk
 
-      - name: Upload CloudWave-Android
+      - name: Upload SoundCloud-S-Android
         uses: actions/upload-artifact@v4
         with:
-          name: CloudWave-Android
-          path: android/dist/CloudWave.apk
+          name: SoundCloud-S-Android
+          path: android/dist/SoundCloud-S.apk
           retention-days: 30
