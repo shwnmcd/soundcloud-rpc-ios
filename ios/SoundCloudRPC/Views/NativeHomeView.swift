@@ -10,6 +10,7 @@ struct NativeHomeView: View {
 
     let onOpenSettings: () -> Void
     var onOpenJam: (() -> Void)? = nil
+    var onOpenGames: (() -> Void)? = nil
 
     @State private var shelves: [SCHomeShelf] = []
     @State private var followingList: [SCUser] = []
@@ -42,15 +43,15 @@ struct NativeHomeView: View {
                         Button {
                             onOpenSettings()
                         } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: 5) {
                                 Image(systemName: "waveform")
                                     .font(.caption.bold())
                                     .foregroundColor(theme.accent)
-                                Text("Ad-Free Studio")
-                                    .font(.system(size: 13.5, weight: .semibold))
+                                Text("SoundCloud S")
+                                    .font(.system(size: 13.5, weight: .bold))
                                     .foregroundColor(theme.textPrimary)
                             }
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, 11)
                             .padding(.vertical, 7)
                             .background(theme.pillFill)
                             .overlay(Capsule().stroke(theme.pillStroke, lineWidth: 1))
@@ -59,6 +60,23 @@ struct NativeHomeView: View {
                         .buttonStyle(SpringPressButtonStyle())
 
                         Spacer()
+
+                        // Arcade Mini-Games Pill Button (Connect 4, Chess & 21!)
+                        if let openGames = onOpenGames {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                openGames()
+                            } label: {
+                                Image(systemName: "gamecontroller.fill")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(theme.accent)
+                                    .frame(width: 34, height: 34)
+                                    .background(theme.pillFill)
+                                    .overlay(Circle().stroke(theme.pillStroke, lineWidth: 1))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(SpringPressButtonStyle(pressedScale: 0.88))
+                        }
 
                         // Group Listening ("Jam") Pill Button
                         if let openJam = onOpenJam {
@@ -261,6 +279,50 @@ struct NativeHomeView: View {
                             .padding(.top, 4)
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
+                    }
+
+                    if !isLoading && shelves.isEmpty && api.likedTracks.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "icloud.slash")
+                                .font(.system(size: 32))
+                                .foregroundColor(theme.accent)
+                            Text("Couldn't load SoundCloud")
+                                .font(.headline.weight(.bold))
+                                .foregroundColor(theme.textPrimary)
+                            Text("Tap Retry to refresh your SoundCloud connection, or open Settings to sign in again.")
+                                .font(.caption)
+                                .foregroundColor(theme.textSecondary)
+                                .multilineTextAlignment(.center)
+                            HStack(spacing: 10) {
+                                Button {
+                                    Task { await loadHome(showToast: true) }
+                                } label: {
+                                    Text("Retry Sync")
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 18)
+                                        .padding(.vertical, 9)
+                                        .background(theme.accent)
+                                        .clipShape(Capsule())
+                                }
+                                Button {
+                                    onOpenSettings()
+                                } label: {
+                                    Text("Settings")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(theme.textPrimary)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 9)
+                                        .background(theme.surfaceElevated)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(20)
+                        .background(theme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.horizontal, 14)
                     }
 
                     Spacer(minLength: 140)

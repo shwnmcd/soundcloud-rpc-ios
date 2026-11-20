@@ -83,12 +83,16 @@ final class SoundCloudAPI: ObservableObject {
         return playlist.rawArtwork
     }
 
-    // MARK: - Core Authenticated Request Helper
+    // MARK: - Core Authenticated Request Helper (Auto-heals missing or rotated client_id!)
     private func requestData(
         urlString: String,
         method: String = "GET",
-        jsonBody: Any? = nil
+        jsonBody: Any? = nil,
+        allowRetry: Bool = true
     ) async throws -> Data {
+        if clientId.isEmpty {
+            _ = await authBridge?.refreshClientId()
+        }
         guard var components = URLComponents(string: urlString) else {
             throw URLError(.badURL)
         }
@@ -117,8 +121,10 @@ final class SoundCloudAPI: ObservableObject {
 
         let (data, response) = try await URLSession.shared.data(for: req)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            if http.statusCode == 401 {
-                authBridge?.startHiddenClientIdHarvester()
+            if (http.statusCode == 401 || http.statusCode == 403) && allowRetry {
+                if await authBridge?.refreshClientId() == true {
+                    return try await requestData(urlString: urlString, method: method, jsonBody: jsonBody, allowRetry: false)
+                }
             }
             throw NSError(domain: "SoundCloudAPI", code: http.statusCode, userInfo: [
                 NSLocalizedDescriptionKey: "SoundCloud returned HTTP \(http.statusCode)"

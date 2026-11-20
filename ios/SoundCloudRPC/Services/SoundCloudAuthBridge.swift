@@ -28,31 +28,98 @@ final class SoundCloudAuthBridge: NSObject, ObservableObject {
         isCheckingAuth = true
         await readCookiesFromWebKitStore()
 
+        // Always fetch a guaranteed fresh SoundCloud client_id directly via URLSession if missing
+        if clientId.isEmpty {
+            _ = await refreshClientId()
+        }
+
         if !oauthToken.isEmpty && !clientId.isEmpty {
             needsLogin = false
             isCheckingAuth = false
-            // Refresh client_id silently in background just in case SoundCloud rotated it
-            startHiddenClientIdHarvester()
+            // Silently refresh client_id in background in case SoundCloud rotated it
+            Task { _ = await self.refreshClientId() }
             return
         }
 
-        // Launch hidden webview briefly to sniff live client_id and verify cookies
-        startHiddenClientIdHarvester()
-
-        // Wait up to 4.5s for client_id & oauth_token
-        for _ in 0..<18 {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            await readCookiesFromWebKitStore()
-            if !oauthToken.isEmpty && !clientId.isEmpty {
-                needsLogin = false
-                isCheckingAuth = false
-                stopHiddenHarvester()
-                return
+        // Secondary fallback: hidden webview sniffer if URLSession couldn't find client_id
+        if clientId.isEmpty {
+            startHiddenClientIdHarvester()
+            for _ in 0..<10 {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                await readCookiesFromWebKitStore()
+                if !oauthToken.isEmpty && !clientId.isEmpty {
+                    needsLogin = false
+                    isCheckingAuth = false
+                    stopHiddenHarvester()
+                    return
+                }
             }
         }
 
         isCheckingAuth = false
         needsLogin = oauthToken.isEmpty
+    }
+
+    /// Directly scrapes SoundCloud's live web bundles via URLSession (instant, zero WebKit throttling!)
+    func refreshClientId() async -> Bool {
+        if let fresh = await Self.fetchFreshClientIdDirectly() {
+            updateClientId(fresh)
+            return true
+        }
+        startHiddenClientIdHarvester()
+        return !clientId.isEmpty
+    }
+
+    private static func fetchFreshClientIdDirectly() async -> String? {
+        guard let homeURL = URL(string: "https://soundcloud.com") else { return nil }
+        var req = URLRequest(url: homeURL)
+        req.timeoutInterval = 12
+        req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
+
+        guard let (htmlData, _) = try? await URLSession.shared.data(for: req),
+              let html = String(data: htmlData, encoding: .utf8) else { return nil }
+
+        // Extract https://a-v2.sndcdn.com/assets/*.js script URLs
+        guard let scriptRegex = try? NSRegularExpression(pattern: #"https://a-v2\.sndcdn\.com/assets/[^"'\s]+\.js"#) else {
+            return nil
+        }
+        let range = NSRange(html.startIndex..., in: html)
+        let matches = scriptRegex.matches(in: html, range: range)
+        let scriptURLs: [URL] = matches.compactMap { m in
+            guard let r = Range(m.range, in: html) else { return nil }
+            return URL(string: String(html[r]))
+        }
+
+        // SoundCloud's app bundle with client_id is almost always among the last few scripts
+        let candidates = Array(scriptURLs.reversed().prefix(10))
+        guard let cidRegex = try? NSRegularExpression(pattern: #"client_id\s*[:=]\s*["']?([a-zA-Z0-9_-]{24,40})["']?"#) else {
+            return nil
+        }
+
+        return await withTaskGroup(of: String?.self) { group in
+            for url in candidates {
+                group.addTask {
+                    var jsReq = URLRequest(url: url)
+                    jsReq.timeoutInterval = 10
+                    guard let (jsData, _) = try? await URLSession.shared.data(for: jsReq),
+                          let js = String(data: jsData, encoding: .utf8) else { return nil }
+                    let jsRange = NSRange(js.startIndex..., in: js)
+                    if let m = cidRegex.firstMatch(in: js, range: jsRange),
+                       m.numberOfRanges > 1,
+                       let r = Range(m.range(at: 1), in: js) {
+                        return String(js[r])
+                    }
+                    return nil
+                }
+            }
+            for await found in group {
+                if let cid = found, !cid.isEmpty {
+                    group.cancelAll()
+                    return cid
+                }
+            }
+            return nil
+        }
     }
 
     func readCookiesFromWebKitStore() async {
@@ -244,8 +311,7 @@ private struct LoginWebViewRepresentable: UIViewRepresentable {
                 if !parent.authBridge.oauthToken.isEmpty {
                     finished = true
                     if parent.authBridge.clientId.isEmpty {
-                        parent.authBridge.startHiddenClientIdHarvester()
-                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        _ = await parent.authBridge.refreshClientId()
                     }
                     parent.onSignedIn()
                 }

@@ -232,6 +232,40 @@ struct JamSessionSheet: View {
             .background(theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(theme.divider, lineWidth: 0.7))
+
+            // Solo or Jam Mini-Games Launcher (Always Accessible!)
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showGamesSheet = true
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(theme.accent.opacity(0.18))
+                            .frame(width: 40, height: 40)
+                        Image(systemName: "gamecontroller.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(theme.accent)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Arcade: Connect 4, Chess & 21")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundColor(theme.textPrimary)
+                        Text("Play solo vs Bot or challenge friends in a Jam")
+                            .font(.caption2)
+                            .foregroundColor(theme.textSecondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundColor(theme.textTertiary)
+                }
+                .padding(12)
+                .background(theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(theme.accent.opacity(0.35), lineWidth: 1))
+            }
+            .buttonStyle(SpringPressButtonStyle(pressedScale: 0.97))
         }
     }
 

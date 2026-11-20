@@ -54,6 +54,7 @@ struct ContentView: View {
     @State private var showingNowPlaying = false
     @State private var showingLoginSheet = false
     @State private var showingJamSheet = false
+    @State private var showingGamesSheet = false
     @State private var presentedArtistFromPlayer: SCUser? = nil
     @State private var refreshTrigger = UUID()
 
@@ -106,6 +107,11 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingJamSheet) {
             JamSessionSheet()
+                .environment(\.scTheme, theme)
+                .preferredColorScheme(settings.themeMode.preferredColorScheme)
+        }
+        .sheet(isPresented: $showingGamesSheet) {
+            JamGamesSheet()
                 .environment(\.scTheme, theme)
                 .preferredColorScheme(settings.themeMode.preferredColorScheme)
         }
@@ -233,7 +239,8 @@ struct ContentView: View {
                     case .home:
                         NativeHomeView(
                             onOpenSettings: { showingSettings = true },
-                            onOpenJam: { showingJamSheet = true }
+                            onOpenJam: { showingJamSheet = true },
+                            onOpenGames: { showingGamesSheet = true }
                         )
                     case .feed:
                         NativeFeedView()
@@ -279,7 +286,7 @@ struct ContentView: View {
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.white)
                     }
-                    Text("SoundCloud")
+                    Text("SoundCloud S")
                         .font(.title3.weight(.bold))
                         .foregroundColor(theme.textPrimary)
                 }
@@ -315,6 +322,22 @@ struct ContentView: View {
                 }
 
                 Spacer()
+
+                Button {
+                    showingGamesSheet = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "gamecontroller.fill").frame(width: 22)
+                        Text("Arcade Games")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                    }
+                    .foregroundColor(theme.textPrimary.opacity(0.85))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 8)
+                }
+                .buttonStyle(SpringPressButtonStyle(pressedScale: 0.96))
 
                 Button {
                     showingJamSheet = true
