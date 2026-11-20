@@ -4,8 +4,10 @@
   // MARK: - App State
   const state = {
     isLoggedIn: false,
-    version: '3.1.0',
+    version: '3.2.0',
     appInfo: null,
+    updateInfo: null,
+    isUpdating: false,
     rpcConnected: false,
     user: null,
     settings: {},
@@ -1765,8 +1767,15 @@
           </div>
         ` : ''}
         <div class="row-gap" style="margin-top:4px">
-          <button id="s-open-folder" class="btn-secondary" style="flex:1">${window.ic('folder', 14)} Open Install Folder</button>
-          <button id="s-uninstall" class="btn-danger" style="flex:1">${window.ic('trash', 14)} Uninstall SoundCloud S</button>
+          <button id="s-check-update" class="btn-primary" style="flex:1">${
+            state.isUpdating
+              ? 'Downloading Update...'
+              : state.updateInfo?.updateAvailable
+                ? `Update to v${esc(state.updateInfo.latestVersion)}`
+                : 'Check for Updates'
+          }</button>
+          <button id="s-open-folder" class="btn-secondary" style="flex:1">${window.ic('folder', 14)} Open Folder</button>
+          <button id="s-uninstall" class="btn-danger">${window.ic('trash', 14)} Uninstall</button>
         </div>
       </div>
     `;
@@ -1802,6 +1811,15 @@
       showToast(`Webhook: ${res}`);
     };
     $('s-rpc-link')?.addEventListener('click', () => api.openExternal('https://github.com/richardhbtz/soundcloud-rpc'));
+    $('s-check-update')?.addEventListener('click', async () => {
+      if (state.isUpdating) return;
+      if (state.updateInfo?.updateAvailable && state.updateInfo.downloadUrl) {
+        await triggerInAppUpdate();
+      } else {
+        await checkForAppUpdates(false);
+        if (state.modalType === 'settings') openSettingsModal();
+      }
+    });
     $('s-open-folder')?.addEventListener('click', () => api.showInstallFolder());
     $('s-uninstall')?.addEventListener('click', async () => {
       if (!confirm('Launch the SoundCloud S uninstaller? This will close and remove SoundCloud S from your PC.')) return;
@@ -1954,6 +1972,11 @@
     $('global-search-btn').onclick = runGlobalSearch;
     $('global-search-input').onkeydown = (e) => { if (e.key === 'Enter') runGlobalSearch(); };
 
+    $('btn-top-update')?.addEventListener('click', () => {
+      if (state.updateInfo?.updateAvailable && state.updateInfo.downloadUrl) {
+        triggerInAppUpdate();
+      }
+    });
     $('btn-top-jam').onclick = () => openJamModal();
     $('btn-jam-bar').onclick = () => openJamModal();
     $('btn-np-jam').onclick = () => openJamModal();
@@ -2120,15 +2143,55 @@
     });
   }
 
+  // MARK: - In-App Auto-Updater
+  async function checkForAppUpdates(silent = true) {
+    if (!api.checkUpdates) return;
+    const res = await api.checkUpdates().catch(() => null);
+    if (!res?.ok) {
+      if (!silent) showToast('Could not check for updates right now');
+      return;
+    }
+    state.updateInfo = res;
+    const topBtn = $('btn-top-update');
+    if (res.updateAvailable) {
+      topBtn.classList.remove('hidden');
+      topBtn.textContent = `Update v${res.latestVersion}`;
+      if (!silent) showToast(`SoundCloud S v${res.latestVersion} is ready — click Update to install!`);
+    } else {
+      topBtn.classList.add('hidden');
+      if (!silent) showToast(`You're up to date (v${res.currentVersion})`);
+    }
+  }
+
+  async function triggerInAppUpdate() {
+    if (!state.updateInfo?.downloadUrl || state.isUpdating) return;
+    state.isUpdating = true;
+    const topBtn = $('btn-top-update');
+    topBtn.textContent = 'Downloading 0%';
+    showToast(`Downloading SoundCloud S v${state.updateInfo.latestVersion}...`);
+    const res = await api.installUpdate(state.updateInfo.downloadUrl);
+    if (!res?.ok) {
+      state.isUpdating = false;
+      topBtn.textContent = `Update v${state.updateInfo.latestVersion}`;
+      showToast(res?.error || 'Update download failed');
+    }
+  }
+
   // MARK: - Boot
   async function boot() {
     window.hydrateIcons?.(document);
     wireEvents();
+    api.onUpdaterProgress?.(({ percent }) => {
+      const topBtn = $('btn-top-update');
+      if (topBtn) topBtn.textContent = `Updating ${percent}%`;
+      const setBtn = $('s-check-update');
+      if (setBtn) setBtn.textContent = `Downloading ${percent}%...`;
+    });
     const [init, appInfo] = await Promise.all([api.init(), api.getAppInfo?.().catch(() => null)]);
     state.isLoggedIn = init.isLoggedIn;
     state.settings = init.settings || {};
     state.rpcConnected = init.rpcConnected;
-    state.version = init.version || '3.1.0';
+    state.version = init.version || '3.2.0';
     state.appInfo = appInfo || null;
     applyTheme();
     showAuthState();
@@ -2137,6 +2200,7 @@
     if (state.isLoggedIn) {
       await syncAllData(false);
     }
+    setTimeout(() => checkForAppUpdates(true), 4500);
   }
 
   boot();

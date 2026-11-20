@@ -5,6 +5,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     name: Build Windows Desktop
@@ -124,3 +127,77 @@ jobs:
           name: SoundCloud-S-Android
           path: android/dist/SoundCloud-S.apk
           retention-days: 30
+
+  publish-release:
+    name: Publish Auto-Update Release & AltStore Source
+    needs: [build-windows, build-ios, build-android]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download All Built Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Generate AltStore Source JSON & Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./desktop/package.json').version")
+          TAG="v${VERSION}"
+          BUILD_NUM=$(grep -oE 'CURRENT_PROJECT_VERSION: "[0-9]+"' ios/project.yml | grep -oE '[0-9]+' || echo "1")
+          IPA_PATH="release-artifacts/SoundCloud-S-iOS/SoundCloud-S.ipa"
+          EXE_PATH="release-artifacts/SoundCloud-S-Windows/SoundCloud-S-Setup.exe"
+          APK_PATH="release-artifacts/SoundCloud-S-Android/SoundCloud-S.apk"
+          IPA_SIZE=$(stat -c%s "$IPA_PATH")
+          ISO_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          REPO="${GITHUB_REPOSITORY}"
+
+          cat > altstore-source.json <<EOF
+          {
+            "name": "SoundCloud S",
+            "identifier": "com.soundclouds.source",
+            "subtitle": "Ad-free SoundCloud with Jam, Arcade Games & VFD Visualizer",
+            "description": "Official auto-update AltStore source for SoundCloud S (based on SoundCloud RPC by richardhbtz).",
+            "website": "https://github.com/${REPO}",
+            "tintColor": "#FF5500",
+            "apps": [
+              {
+                "name": "SoundCloud S",
+                "bundleIdentifier": "com.soundcloudrpc.mobile",
+                "developerName": "SoundCloud S",
+                "subtitle": "Ad-free SoundCloud · Jam · Connect 4, Chess & 21",
+                "localizedDescription": "Native ad-free SoundCloud client for iPhone & iPad with two-way sync, custom themes, vinyl player, worldwide Group Jam, multiplayer Connect Four, Chess & 21 Blackjack, and VFD spectrum visualizer. Based on SoundCloud RPC (MIT).",
+                "tintColor": "#FF5500",
+                "versions": [
+                  {
+                    "version": "${VERSION}",
+                    "buildVersion": "${BUILD_NUM}",
+                    "date": "${ISO_DATE}",
+                    "localizedDescription": "SoundCloud S ${TAG} — automatic in-place updates, direct SoundCloud sync, and multiplayer Jam Arcade.",
+                    "downloadURL": "https://github.com/${REPO}/releases/download/${TAG}/SoundCloud-S.ipa",
+                    "size": ${IPA_SIZE},
+                    "minOSVersion": "16.0"
+                  }
+                ],
+                "appPermissions": {
+                  "entitlements": [],
+                  "privacy": {}
+                }
+              }
+            ],
+            "news": []
+          }
+          EOF
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$EXE_PATH" "$IPA_PATH" "$APK_PATH" altstore-source.json --clobber
+          else
+            gh release create "$TAG" "$EXE_PATH" "$IPA_PATH" "$APK_PATH" altstore-source.json \
+              --title "SoundCloud S ${TAG}" \
+              --notes "SoundCloud S ${TAG} — automatic in-place updates for Windows, iOS (AltStore Source), and Android." \
+              --latest
+          fi

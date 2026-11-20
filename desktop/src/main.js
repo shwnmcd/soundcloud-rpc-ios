@@ -381,6 +381,91 @@ function registerIPC() {
   });
 
   ipcMain.handle('app:showInstallFolder', () => shell.openPath(path.dirname(process.execPath)));
+
+  // Built-in GitHub Releases Auto-Updater (in-place update without reinstalling!)
+  const GITHUB_LATEST_API = 'https://api.github.com/repos/shwnmcd/soundcloud-rpc-ios/releases/latest';
+  const compareSemver = (a, b) => {
+    const pa = String(a || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+    const pb = String(b || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i++) {
+      if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+      if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+    }
+    return 0;
+  };
+
+  ipcMain.handle('updater:check', async () => {
+    const currentVersion = app.getVersion();
+    try {
+      const resp = await fetch(GITHUB_LATEST_API, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'SoundCloud-S-Desktop' }
+      });
+      if (!resp.ok) return { ok: false, currentVersion, error: `HTTP ${resp.status}` };
+      const rel = await resp.json();
+      const latestVersion = String(rel.tag_name || '').replace(/^v/i, '');
+      const asset = (rel.assets || []).find((a) =>
+        typeof a.name === 'string' && a.name.toLowerCase().endsWith('.exe')
+      );
+      const updateAvailable = Boolean(latestVersion && compareSemver(latestVersion, currentVersion) > 0 && asset?.browser_download_url);
+      return {
+        ok: true,
+        updateAvailable,
+        currentVersion,
+        latestVersion: latestVersion || currentVersion,
+        downloadUrl: asset?.browser_download_url || rel.html_url || '',
+        releaseUrl: rel.html_url || 'https://github.com/shwnmcd/soundcloud-rpc-ios/releases/latest',
+        releaseNotes: String(rel.body || '').slice(0, 400)
+      };
+    } catch (err) {
+      return { ok: false, currentVersion, error: String(err?.message || err) };
+    }
+  });
+
+  ipcMain.handle('updater:install', async (_e, downloadUrl) => {
+    if (!downloadUrl || !String(downloadUrl).startsWith('https://')) {
+      return { ok: false, error: 'Invalid update download URL' };
+    }
+    try {
+      const resp = await fetch(downloadUrl, {
+        headers: { 'User-Agent': 'SoundCloud-S-Desktop' }
+      });
+      if (!resp.ok || !resp.body) return { ok: false, error: `Download failed (HTTP ${resp.status})` };
+      const total = Number(resp.headers.get('content-length') || 0);
+      const dest = path.join(app.getPath('temp'), 'SoundCloud-S-Update.exe');
+      const ws = fs.createWriteStream(dest);
+      const reader = resp.body.getReader();
+      let loaded = 0;
+      let lastSent = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        ws.write(Buffer.from(value));
+        loaded += value.length;
+        const now = Date.now();
+        if (now - lastSent > 120) {
+          lastSent = now;
+          const percent = total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 50;
+          mainWindow?.webContents.send('updater-progress', { percent, loaded, total });
+        }
+      }
+      await new Promise((resolve, reject) => {
+        ws.on('finish', resolve);
+        ws.on('error', reject);
+        ws.end();
+      });
+
+      mainWindow?.webContents.send('updater-progress', { percent: 100, loaded, total });
+      const silentArgs = app.isPackaged && fs.existsSync(uninstallerPath()) ? ['/S'] : [];
+      spawn(dest, silentArgs, { detached: true, stdio: 'ignore' }).unref();
+      isQuitting = true;
+      rpc.clearActivity();
+      setTimeout(() => app.quit(), 450);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) };
+    }
+  });
 }
 
 app.whenReady().then(() => {

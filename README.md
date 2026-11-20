@@ -1,18 +1,18 @@
 # SoundCloud S
 
-An ad-free, cross-platform SoundCloud player with **Discord Rich Presence**, **Worldwide Group Jam**, **Multiplayer Connect Four, Chess & 21 Blackjack**, **Custom Themes**, **Vinyl Record Player**, and a **Hardware VFD Spectrum Visualizer**.
+An ad-free, cross-platform SoundCloud player with **Discord Rich Presence**, **Worldwide Group Jam**, **Multiplayer Connect Four, Chess & 21 Blackjack**, **Custom Themes**, **Vinyl Record Player**, **Hardware VFD Spectrum Visualizer**, and **In-Place Auto-Updates**.
 
 > Built on and inspired by **[SoundCloud RPC (`richardhbtz/soundcloud-rpc`)](https://github.com/richardhbtz/soundcloud-rpc)** (MIT License).
 
-## Downloads
+## Downloads & Automatic Updates
 
-Grab the latest builds from the **[Actions](../../actions)** tab:
+Grab the latest release from **[Releases](../../releases/latest)** — after installing once, all future updates install **in-place** without uninstalling or losing your login:
 
-| Platform | Artifact | Install & Uninstall |
+| Platform | Direct Download | How Updates Work |
 | --- | --- | --- |
-| **Windows** | `SoundCloud-S-Windows` (`SoundCloud-S-Setup.exe`) | Run the installer to **choose your install folder**; uninstall anytime from **Settings → Uninstall SoundCloud S** or Windows Installed Apps |
-| **iOS / iPadOS** | `SoundCloud-S-iOS` (`SoundCloud-S.ipa`) | Sideload with **AltStore** |
-| **Android** | `SoundCloud-S-Android` (`SoundCloud-S.apk`) | Install `SoundCloud-S.apk` directly |
+| **Windows** | [`SoundCloud-S-Setup.exe`](../../releases/latest/download/SoundCloud-S-Setup.exe) | Built-in **1-click in-app updater** (top bar & Settings → Check for Updates); choose install folder on first install & uninstall anytime |
+| **iOS / iPadOS (AltStore)** | [`SoundCloud-S.ipa`](../../releases/latest/download/SoundCloud-S.ipa) | Tap **Settings → Add AltStore Source** (or add `https://github.com/shwnmcd/soundcloud-rpc-ios/releases/latest/download/altstore-source.json` in AltStore) for **1-tap in-place AltStore updates** |
+| **Android** | [`SoundCloud-S.apk`](../../releases/latest/download/SoundCloud-S.apk) | Tap **Settings → Update App (In-Place)** to install the latest APK directly over your existing app |
 
 ## Features
 

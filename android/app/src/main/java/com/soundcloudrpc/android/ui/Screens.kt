@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -896,10 +897,23 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, onSignOut: () -> Unit) 
                     Text(user?.displayName ?: "Signed In", color = Color.White, fontWeight = FontWeight.SemiBold)
                     Text("Native ExoPlayer HLS Streaming — Zero Ads", color = Color(0xFF4ADE80), fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = onSignOut,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A1A1A))
-                    ) { Text("Sign Out / Switch Account", color = Color(0xFFFF6B6B)) }
+                    val ctx = LocalContext.current
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                val intent = android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("https://github.com/shwnmcd/soundcloud-rpc-ios/releases/latest/download/SoundCloud-S.apk")
+                                )
+                                ctx.startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = SCOrange)
+                        ) { Text("Update App (In-Place)", color = Color.White) }
+                        Button(
+                            onClick = onSignOut,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A1A1A))
+                        ) { Text("Sign Out", color = Color(0xFFFF6B6B)) }
+                    }
                 }
             }
 

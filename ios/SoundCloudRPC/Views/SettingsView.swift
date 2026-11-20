@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var showingWebhookExample = false
     @State private var showingLastFmAuth = false
     @State private var showingJamSheet = false
+    @ObservedObject private var updater = UpdateService.shared
 
     var body: some View {
         NavigationStack {
@@ -347,8 +348,46 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Updates (AltStore Auto-Update)") {
+                    Button {
+                        Task { await updater.checkForUpdates(silent: false) }
+                    } label: {
+                        Label(updater.isChecking ? "Checking..." : "Check for Updates", systemImage: "arrow.triangle.2.circlepath")
+                    }
+
+                    Button {
+                        updater.openAltStoreUpdate()
+                    } label: {
+                        Label(
+                            updater.updateAvailable ? "Update to v\(updater.latestVersion) in AltStore" : "Update Now in AltStore (In-Place)",
+                            systemImage: "arrow.down.circle.fill"
+                        )
+                        .foregroundColor(theme.accent)
+                    }
+
+                    Button {
+                        updater.openAltStoreAddSource()
+                    } label: {
+                        Label("Add AltStore Source (Auto-Updates)", systemImage: "plus.app.fill")
+                    }
+
+                    Button {
+                        UIPasteboard.general.string = UpdateService.altStoreSourceURL
+                        api.showToast("Copied AltStore Source URL")
+                    } label: {
+                        Label("Copy AltStore Source URL", systemImage: "doc.on.doc")
+                            .font(.caption)
+                    }
+
+                    if !updater.statusMessage.isEmpty {
+                        Text(updater.statusMessage)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
                 Section("About") {
-                    LabeledContent("App", value: "SoundCloud S v3.1 (Native iOS & iPadOS)")
+                    LabeledContent("App", value: "SoundCloud S v3.2 (Native iOS & iPadOS)")
                     LabeledContent("Based on", value: "SoundCloud RPC (richardhbtz/soundcloud-rpc · MIT)")
                 }
             }
