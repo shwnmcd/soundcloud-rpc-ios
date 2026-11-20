@@ -374,21 +374,28 @@
 
     if (mySeq !== activeLoadSeq) return;
 
-    if (initialSeekSec > 0.4) {
-      try { audio.currentTime = initialSeekSec; } catch {}
-    }
-
     if (autoPlay) {
       try {
         await audio.play();
         state.isPlaying = !audio.paused;
-      } catch (err) {
+      } catch {
         state.isPlaying = false;
         showToast('Click Play to start audio');
       }
     } else {
       audio.pause();
       state.isPlaying = false;
+    }
+
+    // Apply initial Jam seek cleanly once metadata is ready so audio never stalls
+    if (initialSeekSec > 0.5) {
+      const applySeek = () => {
+        if (mySeq !== activeLoadSeq) return;
+        try { audio.currentTime = initialSeekSec; } catch {}
+        if (autoPlay && audio.paused) audio.play().catch(() => {});
+      };
+      if (audio.readyState >= 1) applySeek();
+      else audio.addEventListener('loadedmetadata', applySeek, { once: true });
     }
 
     renderPlayerUI();
@@ -500,10 +507,21 @@
     if (state.modalType === 'jam') renderJamModal();
 
     const finalLiked = await api.toggleLike(id, wasLiked);
-    if (finalLiked) state.likedIds.add(id);
-    else state.likedIds.delete(id);
-    showToast(finalLiked ? 'Liked & synced to SoundCloud' : 'Removed from SoundCloud likes');
+    if (finalLiked !== !wasLiked) {
+      // Server rejected — revert optimistic state so UI always matches SoundCloud.com!
+      if (wasLiked) state.likedIds.add(id);
+      else {
+        state.likedIds.delete(id);
+        state.likes = state.likes.filter((t) => Number(t.id) !== id);
+      }
+      showToast('Could not sync like to SoundCloud — check sign-in');
+    } else {
+      if (finalLiked) state.likedIds.add(id);
+      else state.likedIds.delete(id);
+      showToast(finalLiked ? 'Liked & synced to SoundCloud' : 'Removed from SoundCloud likes');
+    }
     renderPlayerUI();
+    renderView();
   }
 
   function syncDesktopServices() {
@@ -2201,6 +2219,18 @@
       await syncAllData(false);
     }
     setTimeout(() => checkForAppUpdates(true), 4500);
+
+    // Automatically keep likes, playlists & account info synced with SoundCloud.com
+    let lastAutoSync = Date.now();
+    const maybeAutoSync = () => {
+      if (!state.isLoggedIn || Date.now() - lastAutoSync < 35000) return;
+      lastAutoSync = Date.now();
+      syncAllData(false).catch(() => {});
+    };
+    window.addEventListener('focus', maybeAutoSync);
+    setInterval(() => {
+      if (state.isLoggedIn) syncAllData(false).catch(() => {});
+    }, 90000);
   }
 
   boot();

@@ -100,16 +100,23 @@ final class SoundCloudAPI: ObservableObject {
         if !items.contains(where: { $0.name == "client_id" }) && !clientId.isEmpty {
             items.append(URLQueryItem(name: "client_id", value: clientId))
         }
+        if !items.contains(where: { $0.name == "app_version" }) {
+            items.append(URLQueryItem(name: "app_version", value: "1732000000"))
+        }
+        if !items.contains(where: { $0.name == "app_locale" }) {
+            items.append(URLQueryItem(name: "app_locale", value: "en"))
+        }
         components.queryItems = items
         guard let finalURL = components.url else { throw URLError(.badURL) }
 
         var req = URLRequest(url: finalURL)
         req.httpMethod = method
         req.timeoutInterval = 18
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         if !oauthToken.isEmpty {
             req.setValue("OAuth \(oauthToken)", forHTTPHeaderField: "Authorization")
         }
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("application/json, text/javascript, */*; q=0.01", forHTTPHeaderField: "Accept")
         req.setValue("https://soundcloud.com", forHTTPHeaderField: "Origin")
         req.setValue("https://soundcloud.com/", forHTTPHeaderField: "Referer")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
@@ -117,6 +124,8 @@ final class SoundCloudAPI: ObservableObject {
         if let jsonBody {
             req.httpBody = try JSONSerialization.data(withJSONObject: jsonBody)
             req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        } else if method == "PUT" {
+            req.setValue("0", forHTTPHeaderField: "Content-Length")
         }
 
         let (data, response) = try await URLSession.shared.data(for: req)

@@ -74,6 +74,7 @@ struct SleekScrubberBar: View {
 struct NowPlayingSheetView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.scTheme) private var theme
     @ObservedObject var player: AudioPlayerService
     @ObservedObject var api: SoundCloudAPI
@@ -161,189 +162,269 @@ struct NowPlayingSheetView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
-            // === LAYER 2: INTERACTIVE FOREGROUND UI ===
-            VStack(spacing: 0) {
-                // Top Bar: Down Chevron · Clickable Artist Source · Real Action Menu
-                topBar
-                    .padding(.horizontal, 12)
-                    .padding(.top, 6)
+            // === LAYER 2: INTERACTIVE FOREGROUND UI (Portrait & Landscape Adaptive!) ===
+            GeometryReader { geo in
+                let isLandscapePhone = verticalSizeClass == .compact || (geo.size.width > geo.size.height && geo.size.height < 520)
 
-                // Sleek Animated 3-Style Switcher Pill + Fullscreen VFD Visualizer Toggle + Live Jam Badge
-                HStack(spacing: 8) {
-                    playbackStyleSwitcher
+                if isLandscapePhone {
+                    // Clean 2-Column Horizontal Layout (Zero Clipping!)
+                    let artSize = max(140, min(geo.size.height - 96, geo.size.width * 0.34))
+                    VStack(spacing: 4) {
+                        topBar
+                            .padding(.horizontal, 16)
+                            .padding(.top, 4)
 
-                    Button {
-                        haptic(.medium)
-                        showVisualizer = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "waveform.path.ecg")
-                                .font(.system(size: 12, weight: .bold))
-                            Text("VFD")
-                                .font(.system(size: 11, weight: .black, design: .monospaced))
-                        }
-                        .foregroundColor(Color(red: 0.18, green: 0.96, blue: 0.62))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(Color.black.opacity(useLightInk ? 0.55 : 0.82))
-                        .overlay(Capsule().stroke(Color(red: 0.18, green: 0.96, blue: 0.62).opacity(0.55), lineWidth: 1))
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(SpringPressButtonStyle(pressedScale: 0.90))
-
-                    if jam.isActive {
-                        Button {
-                            haptic(.light)
-                            showJamSheet = true
-                        } label: {
-                            HStack(spacing: 5) {
-                                Circle()
-                                    .fill(Color.green)
-                                    .frame(width: 7, height: 7)
-                                Text("JAM · \(jam.listenerCount)")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(theme.accent)
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(SpringPressButtonStyle(pressedScale: 0.90))
-                        .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .padding(.top, 6)
-
-                // === MIDDLE INTERACTIVE SWIPE STAGE ===
-                // Slide LEFT -> Previous Song · Slide RIGHT -> Next Song · Slide DOWN -> Dismiss!
-                ZStack {
-                    Color.clear
-
-                    if style == .vinyl {
-                        VinylRecordPlayerView(
-                            artworkUrl: track?.rawArtwork,
-                            isPlaying: player.isPlaying,
-                            accentColor: theme.accent,
-                            discSize: sizeClass == .regular ? 328 : 262
-                        )
-                        .id(track?.id ?? 0)
-                        .transition(.asymmetric(
-                            insertion: .scale(scale: 0.86).combined(with: .opacity),
-                            removal: .scale(scale: 0.90).combined(with: .opacity)
-                        ))
-                        .offset(x: swipeXOffset * 0.55)
-                        .rotationEffect(.degrees(Double(swipeXOffset) / 26.0))
-                        .opacity(max(0.55, 1.0 - abs(swipeXOffset) / 340.0))
-                    } else if style == .card {
-                        HDArtworkView(rawUrl: track?.rawArtwork, preferOriginal: true, cornerRadius: 18)
-                            .frame(
-                                width: sizeClass == .regular ? 336 : 278,
-                                height: sizeClass == .regular ? 336 : 278
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .stroke(useLightInk ? Color.white.opacity(0.18) : Color.black.opacity(0.08), lineWidth: 1)
-                            )
-                            .shadow(
-                                color: .black.opacity(useLightInk ? 0.55 : 0.22),
-                                radius: player.isPlaying ? 28 : 14,
-                                x: 0,
-                                y: player.isPlaying ? 16 : 8
-                            )
-                            .scaleEffect(player.isPlaying ? 1.0 : 0.90)
-                            .animation(.spring(response: 0.52, dampingFraction: 0.72), value: player.isPlaying)
-                            .id(track?.id ?? 0)
-                            .transition(.asymmetric(
-                                insertion: .scale(scale: 0.90).combined(with: .opacity),
-                                removal: .scale(scale: 0.92).combined(with: .opacity)
-                            ))
-                            .offset(x: swipeXOffset * 0.62)
-                            .rotationEffect(.degrees(Double(swipeXOffset) / 30.0))
-                            .opacity(max(0.55, 1.0 - abs(swipeXOffset) / 340.0))
-                    }
-
-                    // Live Directional Swipe Indicator Pill (Slide Left = Previous, Slide Right = Next!)
-                    if abs(swipeXOffset) > 22 {
-                        let goingPrev = swipeXOffset < 0
-                        HStack(spacing: 6) {
-                            if goingPrev {
-                                Image(systemName: "backward.end.fill")
-                                Text("Previous")
-                            } else {
-                                Text("Next")
-                                Image(systemName: "forward.end.fill")
-                            }
-                        }
-                        .font(.caption.weight(.bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Color.black.opacity(0.65))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(theme.accent.opacity(0.65), lineWidth: 1))
-                        .frame(maxWidth: .infinity, alignment: goingPrev ? .leading : .trailing)
-                        .padding(.horizontal, 22)
-                        .transition(.opacity)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 18)
-                        .onChanged { value in
-                            let dx = value.translation.width
-                            let dy = value.translation.height
-                            if abs(dx) > abs(dy) {
-                                if !jam.isGuestLocked {
-                                    swipeXOffset = dx
+                        HStack(spacing: 20) {
+                            // Left Column: Vinyl / Artwork Stage
+                            ZStack {
+                                if style == .vinyl {
+                                    VinylRecordPlayerView(
+                                        artworkUrl: track?.rawArtwork,
+                                        isPlaying: player.isPlaying,
+                                        accentColor: theme.accent,
+                                        discSize: artSize
+                                    )
+                                    .id(track?.id ?? 0)
+                                } else {
+                                    HDArtworkView(rawUrl: track?.rawArtwork, preferOriginal: true, cornerRadius: 16)
+                                        .frame(width: artSize, height: artSize)
+                                        .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
+                                        .id(track?.id ?? 0)
                                 }
-                            } else if dy > 0 {
-                                dismissDragOffset = dy
+                            }
+                            .frame(width: artSize + 16, height: artSize + 10)
+
+                            // Right Column: Style Pills + Controls
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    playbackStyleSwitcher
+                                    Button {
+                                        haptic(.medium)
+                                        showVisualizer = true
+                                    } label: {
+                                        Text("VFD")
+                                            .font(.system(size: 11, weight: .black, design: .monospaced))
+                                            .foregroundColor(Color(red: 0.18, green: 0.96, blue: 0.62))
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(Color.black.opacity(0.65))
+                                            .overlay(Capsule().stroke(Color(red: 0.18, green: 0.96, blue: 0.62).opacity(0.55), lineWidth: 1))
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(SpringPressButtonStyle(pressedScale: 0.90))
+
+                                    if jam.isActive {
+                                        Button {
+                                            haptic(.light)
+                                            showJamSheet = true
+                                        } label: {
+                                            Text("● JAM · \(jam.listenerCount)")
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 9)
+                                                .padding(.vertical, 6)
+                                                .background(theme.accent)
+                                                .clipShape(Capsule())
+                                        }
+                                        .buttonStyle(SpringPressButtonStyle(pressedScale: 0.90))
+                                    }
+                                }
+
+                                Spacer(minLength: 2)
+                                controlsBlock
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                } else {
+                    // Portrait & iPad Full Layout
+                    VStack(spacing: 0) {
+                        // Top Bar: Down Chevron · Clickable Artist Source · Real Action Menu
+                        topBar
+                            .padding(.horizontal, 12)
+                            .padding(.top, 6)
+
+                        // Sleek Animated 3-Style Switcher Pill + Fullscreen VFD Visualizer Toggle + Live Jam Badge
+                        HStack(spacing: 8) {
+                            playbackStyleSwitcher
+
+                            Button {
+                                haptic(.medium)
+                                showVisualizer = true
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "waveform.path.ecg")
+                                        .font(.system(size: 12, weight: .bold))
+                                    Text("VFD")
+                                        .font(.system(size: 11, weight: .black, design: .monospaced))
+                                }
+                                .foregroundColor(Color(red: 0.18, green: 0.96, blue: 0.62))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(Color.black.opacity(useLightInk ? 0.55 : 0.82))
+                                .overlay(Capsule().stroke(Color(red: 0.18, green: 0.96, blue: 0.62).opacity(0.55), lineWidth: 1))
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(SpringPressButtonStyle(pressedScale: 0.90))
+
+                            if jam.isActive {
+                                Button {
+                                    haptic(.light)
+                                    showJamSheet = true
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Circle()
+                                            .fill(Color.green)
+                                            .frame(width: 7, height: 7)
+                                        Text("JAM · \(jam.listenerCount)")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.white)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
+                                    .background(theme.accent)
+                                    .clipShape(Capsule())
+                                }
+                                .buttonStyle(SpringPressButtonStyle(pressedScale: 0.90))
+                                .transition(.scale.combined(with: .opacity))
                             }
                         }
-                        .onEnded { value in
-                            let dx = value.translation.width
-                            let dy = value.translation.height
-                            if abs(dx) > abs(dy) {
-                                if !jam.isGuestLocked {
-                                    // User preference: Slide LEFT -> Previous Song · Slide RIGHT -> Next Song!
-                                    if dx < -55 {
-                                        haptic(.medium)
-                                        withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
-                                            player.previousTrack(forcePrevious: true)
+                        .padding(.top, 6)
+
+                        // === MIDDLE INTERACTIVE SWIPE STAGE ===
+                        // Slide LEFT -> Previous Song · Slide RIGHT -> Next Song · Slide DOWN -> Dismiss!
+                        ZStack {
+                            Color.clear
+
+                            if style == .vinyl {
+                                VinylRecordPlayerView(
+                                    artworkUrl: track?.rawArtwork,
+                                    isPlaying: player.isPlaying,
+                                    accentColor: theme.accent,
+                                    discSize: sizeClass == .regular ? 328 : 262
+                                )
+                                .id(track?.id ?? 0)
+                                .transition(.asymmetric(
+                                    insertion: .scale(scale: 0.86).combined(with: .opacity),
+                                    removal: .scale(scale: 0.90).combined(with: .opacity)
+                                ))
+                                .offset(x: swipeXOffset * 0.55)
+                                .rotationEffect(.degrees(Double(swipeXOffset) / 26.0))
+                                .opacity(max(0.55, 1.0 - abs(swipeXOffset) / 340.0))
+                            } else if style == .card {
+                                HDArtworkView(rawUrl: track?.rawArtwork, preferOriginal: true, cornerRadius: 18)
+                                    .frame(
+                                        width: sizeClass == .regular ? 336 : 278,
+                                        height: sizeClass == .regular ? 336 : 278
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                            .stroke(useLightInk ? Color.white.opacity(0.18) : Color.black.opacity(0.08), lineWidth: 1)
+                                    )
+                                    .shadow(
+                                        color: .black.opacity(useLightInk ? 0.55 : 0.22),
+                                        radius: player.isPlaying ? 28 : 14,
+                                        x: 0,
+                                        y: player.isPlaying ? 16 : 8
+                                    )
+                                    .scaleEffect(player.isPlaying ? 1.0 : 0.90)
+                                    .animation(.spring(response: 0.52, dampingFraction: 0.72), value: player.isPlaying)
+                                    .id(track?.id ?? 0)
+                                    .transition(.asymmetric(
+                                        insertion: .scale(scale: 0.90).combined(with: .opacity),
+                                        removal: .scale(scale: 0.92).combined(with: .opacity)
+                                    ))
+                                    .offset(x: swipeXOffset * 0.62)
+                                    .rotationEffect(.degrees(Double(swipeXOffset) / 30.0))
+                                    .opacity(max(0.55, 1.0 - abs(swipeXOffset) / 340.0))
+                            }
+
+                            // Live Directional Swipe Indicator Pill (Slide Left = Previous, Slide Right = Next!)
+                            if abs(swipeXOffset) > 22 {
+                                let goingPrev = swipeXOffset < 0
+                                HStack(spacing: 6) {
+                                    if goingPrev {
+                                        Image(systemName: "backward.end.fill")
+                                        Text("Previous")
+                                    } else {
+                                        Text("Next")
+                                        Image(systemName: "forward.end.fill")
+                                    }
+                                }
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(Color.black.opacity(0.65))
+                                .clipShape(Capsule())
+                                .overlay(Capsule().stroke(theme.accent.opacity(0.65), lineWidth: 1))
+                                .frame(maxWidth: .infinity, alignment: goingPrev ? .leading : .trailing)
+                                .padding(.horizontal, 22)
+                                .transition(.opacity)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 18)
+                                .onChanged { value in
+                                    let dx = value.translation.width
+                                    let dy = value.translation.height
+                                    if abs(dx) > abs(dy) {
+                                        if !jam.isGuestLocked {
+                                            swipeXOffset = dx
                                         }
-                                    } else if dx > 55 {
-                                        haptic(.medium)
-                                        withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
-                                            player.nextTrack()
+                                    } else if dy > 0 {
+                                        dismissDragOffset = dy
+                                    }
+                                }
+                                .onEnded { value in
+                                    let dx = value.translation.width
+                                    let dy = value.translation.height
+                                    if abs(dx) > abs(dy) {
+                                        if !jam.isGuestLocked {
+                                            // User preference: Slide LEFT -> Previous Song · Slide RIGHT -> Next Song!
+                                            if dx < -55 {
+                                                haptic(.medium)
+                                                withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
+                                                    player.previousTrack(forcePrevious: true)
+                                                }
+                                            } else if dx > 55 {
+                                                haptic(.medium)
+                                                withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
+                                                    player.nextTrack()
+                                                }
+                                            }
+                                        } else if abs(dx) > 55 {
+                                            api.showToast("Host controls playback in this Jam")
+                                        }
+                                        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+                                            swipeXOffset = 0
+                                        }
+                                    } else if dy > 95 {
+                                        haptic(.light)
+                                        dismiss()
+                                    } else {
+                                        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+                                            dismissDragOffset = 0
+                                            swipeXOffset = 0
                                         }
                                     }
-                                } else if abs(dx) > 55 {
-                                    api.showToast("Host controls playback in this Jam")
                                 }
-                                withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
-                                    swipeXOffset = 0
-                                }
-                            } else if dy > 95 {
-                                haptic(.light)
-                                dismiss()
-                            } else {
-                                withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
-                                    dismissDragOffset = 0
-                                    swipeXOffset = 0
-                                }
-                            }
-                        }
-                )
-                .animation(.spring(response: 0.42, dampingFraction: 0.80), value: track?.id)
-                .animation(.spring(response: 0.42, dampingFraction: 0.82), value: style)
+                        )
+                        .animation(.spring(response: 0.42, dampingFraction: 0.80), value: track?.id)
+                        .animation(.spring(response: 0.42, dampingFraction: 0.82), value: style)
 
-                // === FLOATING PLAYBACK CONTROLS BLOCK ===
-                controlsBlock
-                    .frame(maxWidth: sizeClass == .regular ? 500 : .infinity)
-                    .padding(.horizontal, 22)
-                    .padding(.bottom, 30)
+                        // === FLOATING PLAYBACK CONTROLS BLOCK ===
+                        controlsBlock
+                            .frame(maxWidth: sizeClass == .regular ? 500 : .infinity)
+                            .padding(.horizontal, 22)
+                            .padding(.bottom, 30)
+                    }
+                }
             }
 
             // Floating Sync Toast inside FullScreenCover

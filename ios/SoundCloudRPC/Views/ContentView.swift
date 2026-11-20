@@ -37,6 +37,7 @@ enum AppTab: String, CaseIterable {
 
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.scTheme) private var theme
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var authBridge: SoundCloudAuthBridge
@@ -143,6 +144,11 @@ struct ContentView: View {
             await authBridge.bootstrap()
             if authBridge.isReady {
                 await api.syncLibrary(showConfirmationToast: false)
+            }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active && authBridge.isReady {
+                Task { await api.syncLibrary(showConfirmationToast: false) }
             }
         }
     }

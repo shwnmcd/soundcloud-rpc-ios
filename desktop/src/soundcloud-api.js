@@ -18,9 +18,15 @@ class SoundCloudDesktopAPI {
     if (!u.searchParams.has('client_id') && clientId) {
       u.searchParams.set('client_id', clientId);
     }
+    if (!u.searchParams.has('app_version')) {
+      u.searchParams.set('app_version', '1732000000');
+    }
+    if (!u.searchParams.has('app_locale')) {
+      u.searchParams.set('app_locale', 'en');
+    }
 
     const headers = {
-      Accept: 'application/json',
+      Accept: 'application/json, text/javascript, */*; q=0.01',
       Origin: 'https://soundcloud.com',
       Referer: 'https://soundcloud.com/',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
@@ -32,9 +38,11 @@ class SoundCloudDesktopAPI {
     if (jsonBody !== null) {
       headers['Content-Type'] = 'application/json; charset=utf-8';
       body = JSON.stringify(jsonBody);
+    } else if (method === 'PUT') {
+      headers['Content-Length'] = '0';
     }
 
-    const resp = await fetch(u.toString(), { method, headers, body });
+    const resp = await fetch(u.toString(), { method, headers, body, cache: 'no-store' });
     if (!resp.ok) {
       throw new Error(`SoundCloud HTTP ${resp.status}`);
     }

@@ -12,8 +12,8 @@ android {
         applicationId = "com.soundcloudrpc.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 19
-        versionName = "3.2.0"
+        versionCode = 20
+        versionName = "3.3.0"
     }
 
     buildTypes {

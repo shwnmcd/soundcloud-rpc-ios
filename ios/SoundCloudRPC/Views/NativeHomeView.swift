@@ -3,6 +3,8 @@ import UIKit
 
 struct NativeHomeView: View {
     @Environment(\.scTheme) private var theme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @EnvironmentObject var api: SoundCloudAPI
     @EnvironmentObject var player: AudioPlayerService
     @EnvironmentObject var settings: AppSettings
@@ -40,24 +42,29 @@ struct NativeHomeView: View {
                         }
                         .onTapGesture { onOpenSettings() }
 
-                        Button {
-                            onOpenSettings()
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "waveform")
-                                    .font(.caption.bold())
-                                    .foregroundColor(theme.accent)
-                                Text("SoundCloud S")
-                                    .font(.system(size: 13.5, weight: .bold))
-                                    .foregroundColor(theme.textPrimary)
+                        // Only show the SoundCloud S brand pill in Horizontal / Landscape mode (or iPad)
+                        if verticalSizeClass == .compact || horizontalSizeClass == .regular {
+                            Button {
+                                onOpenSettings()
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "waveform")
+                                        .font(.caption.bold())
+                                        .foregroundColor(theme.accent)
+                                    Text("SoundCloud S")
+                                        .font(.system(size: 13.5, weight: .bold))
+                                        .foregroundColor(theme.textPrimary)
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 7)
+                                .background(theme.pillFill)
+                                .overlay(Capsule().stroke(theme.pillStroke, lineWidth: 1))
+                                .clipShape(Capsule())
                             }
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 7)
-                            .background(theme.pillFill)
-                            .overlay(Capsule().stroke(theme.pillStroke, lineWidth: 1))
-                            .clipShape(Capsule())
+                            .buttonStyle(SpringPressButtonStyle())
                         }
-                        .buttonStyle(SpringPressButtonStyle())
 
                         Spacer()
 

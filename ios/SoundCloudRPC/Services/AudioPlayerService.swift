@@ -144,15 +144,9 @@ final class AudioPlayerService: ObservableObject {
         let item = AVPlayerItem(url: streamURL)
         player.replaceCurrentItem(with: item)
 
-        if let targetSec = initialSeekSeconds, targetSec > 0.4 {
-            let cmTime = CMTime(seconds: targetSec, preferredTimescale: 600)
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
-                    continuation.resume()
-                }
-            }
-            elapsedSeconds = targetSec
-        }
+        // Ensure AVAudioSession is active so remote Jam audio plays immediately out loud!
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        try? AVAudioSession.sharedInstance().setActive(true)
 
         if shouldAutoPlay {
             player.play()
@@ -160,6 +154,21 @@ final class AudioPlayerService: ObservableObject {
         } else {
             player.pause()
             isPlaying = false
+        }
+
+        // Non-blocking seek after playback starts so HLS items never deadlock a continuation!
+        if let targetSec = initialSeekSeconds, targetSec > 0.5 {
+            elapsedSeconds = targetSec
+            let cmTime = CMTime(seconds: targetSec, preferredTimescale: 600)
+            let tol = CMTime(seconds: 0.6, preferredTimescale: 600)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                guard let self, self.player.currentItem === item else { return }
+                self.player.seek(to: cmTime, toleranceBefore: tol, toleranceAfter: tol) { _ in
+                    if shouldAutoPlay {
+                        self.player.play()
+                    }
+                }
+            }
         }
         isLoadingTrack = false
 
@@ -280,7 +289,8 @@ final class AudioPlayerService: ObservableObject {
             if abs(elapsedSeconds - targetPositionSec) > 1.8 {
                 seek(toSeconds: targetPositionSec, notifyJam: false)
             }
-            if shouldPlay && !isPlaying {
+            if shouldPlay && (!isPlaying || player.timeControlStatus != .playing) {
+                try? AVAudioSession.sharedInstance().setActive(true)
                 player.play()
                 isPlaying = true
                 syncExternalServices(forceLockScreen: true)

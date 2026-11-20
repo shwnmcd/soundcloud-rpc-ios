@@ -13,6 +13,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.Cache
+import okhttp3.CacheControl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -75,9 +76,16 @@ class SoundCloudApi(
             if (base.queryParameter("client_id") == null && prefs.clientId.isNotBlank()) {
                 builder.addQueryParameter("client_id", prefs.clientId)
             }
+            if (base.queryParameter("app_version") == null) {
+                builder.addQueryParameter("app_version", "1732000000")
+            }
+            if (base.queryParameter("app_locale") == null) {
+                builder.addQueryParameter("app_locale", "en")
+            }
             val reqBuilder = Request.Builder()
                 .url(builder.build())
-                .header("Accept", "application/json")
+                .cacheControl(CacheControl.FORCE_NETWORK)
+                .header("Accept", "application/json, text/javascript, */*; q=0.01")
                 .header("Origin", "https://soundcloud.com")
                 .header("Referer", "https://soundcloud.com/")
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126.0.0.0 Mobile Safari/537.36")
@@ -440,13 +448,20 @@ class SoundCloudApi(
         SearchResult(tracks, users, playlists)
     }.getOrDefault(SearchResult(emptyList(), emptyList(), emptyList()))
 
-    suspend fun toggleLike(userId: Long, trackId: Long, currentlyLiked: Boolean): Boolean = runCatching {
-        requestJson(
-            url = "https://api-v2.soundcloud.com/users/$userId/track_likes/$trackId",
-            method = if (currentlyLiked) "DELETE" else "PUT"
-        )
-        !currentlyLiked
-    }.getOrDefault(currentlyLiked)
+    suspend fun toggleLike(userId: Long, trackId: Long, currentlyLiked: Boolean): Boolean {
+        val method = if (currentlyLiked) "DELETE" else "PUT"
+        val primaryOk = runCatching {
+            requestJson("https://api-v2.soundcloud.com/users/$userId/track_likes/$trackId", method)
+            true
+        }.getOrDefault(false)
+        if (primaryOk) return !currentlyLiked
+
+        val fallbackOk = runCatching {
+            requestJson("https://api-v2.soundcloud.com/me/track_likes/$trackId", method)
+            true
+        }.getOrDefault(false)
+        return if (fallbackOk) !currentlyLiked else currentlyLiked
+    }
 
     suspend fun resolveStreamUrl(track: SCTrack): String? = runCatching {
         var transcodings = track.media?.transcodings.orEmpty()
