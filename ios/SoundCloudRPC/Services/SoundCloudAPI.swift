@@ -184,7 +184,8 @@ final class SoundCloudAPI: ObservableObject {
                 var playlists: [SCPlaylist] = []
                 for entry in rawList {
                     if let entryData = try? JSONSerialization.data(withJSONObject: entry),
-                       let pl = try? decoder.decode(SCPlaylist.self, from: entryData) {
+                       let pl = try? decoder.decode(SCPlaylist.self, from: entryData),
+                       pl.hasRealTitle {
                         playlists.append(pl)
                     }
                 }
@@ -269,37 +270,119 @@ final class SoundCloudAPI: ObservableObject {
         }
     }
 
-    // MARK: - Playlists & Albums (With Automatic Missing Cover Artwork Hydration!)
+    // MARK: - Playlists & Albums (Full Multi-Endpoint SoundCloud Sync + Title & Artwork Hydration!)
+    private func fetchCreatedPlaylists(userId: Int) async -> [SCPlaylist] {
+        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/playlists_without_albums?limit=100"),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let col = root["collection"] as? [[String: Any]] else { return [] }
+        return col.compactMap { entry in
+            guard let d = try? JSONSerialization.data(withJSONObject: entry) else { return nil }
+            return try? decoder.decode(SCPlaylist.self, from: d)
+        }
+    }
+
+    private func fetchLikedPlaylists(userId: Int) async -> [SCPlaylist] {
+        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/users/\(userId)/playlist_likes?limit=100"),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let col = root["collection"] as? [[String: Any]] else { return [] }
+        return col.compactMap { entry in
+            let raw = entry["playlist"] ?? entry
+            guard let d = try? JSONSerialization.data(withJSONObject: raw) else { return nil }
+            return try? decoder.decode(SCPlaylist.self, from: d)
+        }
+    }
+
+    private func fetchLibraryAllRaw() async -> [SCPlaylist] {
+        guard let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/me/library/all?limit=100"),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let collection = root["collection"] as? [[String: Any]] else { return [] }
+
+        var results: [SCPlaylist] = []
+        for entry in collection {
+            if let rawPl = entry["playlist"] ?? entry["system_playlist"],
+               let pData = try? JSONSerialization.data(withJSONObject: rawPl),
+               let pl = try? decoder.decode(SCPlaylist.self, from: pData) {
+                results.append(pl)
+            }
+        }
+        return results
+    }
+
+    private func hydratePlaylistMetadata(_ stub: SCPlaylist) async -> SCPlaylist? {
+        guard stub.id > 0,
+              let data = try? await requestData(urlString: "https://api-v2.soundcloud.com/playlists/\(stub.id)"),
+              let full = try? decoder.decode(SCPlaylist.self, from: data) else { return nil }
+        return full
+    }
+
     func fetchLibraryPlaylistsAndAlbums() async -> (playlists: [SCPlaylist], albums: [SCPlaylist]) {
-        do {
-            let data = try await requestData(urlString: "https://api-v2.soundcloud.com/me/library/all?limit=100")
-            guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let collection = root["collection"] as? [[String: Any]] else { return ([], []) }
+        if currentUser == nil {
+            _ = await fetchMe()
+        }
+        let userId = currentUser?.id
 
-            var playlists: [SCPlaylist] = []
-            var albums: [SCPlaylist] = []
+        async let allLibTask = fetchLibraryAllRaw()
+        async let createdTask: [SCPlaylist] = userId != nil ? fetchCreatedPlaylists(userId: userId!) : []
+        async let likedPlTask: [SCPlaylist] = userId != nil ? fetchLikedPlaylists(userId: userId!) : []
+        async let albumsTask: [SCPlaylist] = userId != nil ? fetchUserAlbums(userId: userId!) : []
 
-            for entry in collection {
-                if let rawPl = entry["playlist"] ?? entry["system_playlist"],
-                   let pData = try? JSONSerialization.data(withJSONObject: rawPl),
-                   let pl = try? decoder.decode(SCPlaylist.self, from: pData) {
-                    if pl.isAlbum == true {
-                        albums.append(pl)
-                    } else {
-                        playlists.append(pl)
+        let (allLib, created, likedPls, ownAlbums) = await (allLibTask, createdTask, likedPlTask, albumsTask)
+
+        // Merge & deduplicate by ID, preferring entries with real titles & artwork!
+        var orderedIds: [Int] = []
+        var byId: [Int: SCPlaylist] = [:]
+
+        func mergeList(_ list: [SCPlaylist]) {
+            for pl in list {
+                if let existing = byId[pl.id] {
+                    let existingScore = (existing.hasRealTitle ? 10 : 0) + ((existing.artworkUrl?.isEmpty == false) ? 4 : 0) + (existing.tracks?.count ?? 0)
+                    let newScore = (pl.hasRealTitle ? 10 : 0) + ((pl.artworkUrl?.isEmpty == false) ? 4 : 0) + (pl.tracks?.count ?? 0)
+                    if newScore > existingScore {
+                        byId[pl.id] = pl
                     }
+                } else {
+                    orderedIds.append(pl.id)
+                    byId[pl.id] = pl
                 }
             }
-
-            // Hydrate cover artwork for user playlists whose artwork_url is nil and first track is a stub
-            await hydrateMissingPlaylistArtwork(for: playlists + albums)
-
-            self.userPlaylists = playlists
-            self.userAlbums = albums
-            return (playlists, albums)
-        } catch {
-            return ([], [])
         }
+
+        // Prioritize canonical created & liked playlists first, then library/all & albums
+        mergeList(created)
+        mergeList(likedPls)
+        mergeList(ownAlbums)
+        mergeList(allLib)
+
+        // Hydrate any remaining stub playlists that came back without a title from /me/library/all
+        let missingTitleIds = orderedIds.filter { id in
+            guard let p = byId[id] else { return false }
+            return !p.hasRealTitle && p.id > 0
+        }.prefix(24)
+
+        for stubId in missingTitleIds {
+            if let stub = byId[stubId], let hydrated = await hydratePlaylistMetadata(stub) {
+                byId[stubId] = hydrated
+            }
+        }
+
+        var playlists: [SCPlaylist] = []
+        var albums: [SCPlaylist] = []
+
+        for id in orderedIds {
+            guard let pl = byId[id], pl.hasRealTitle else { continue }
+            if pl.isAlbum == true {
+                albums.append(pl)
+            } else {
+                playlists.append(pl)
+            }
+        }
+
+        // Hydrate cover artwork for user playlists whose artwork_url is nil and first track is a stub
+        await hydrateMissingPlaylistArtwork(for: playlists + albums)
+
+        self.userPlaylists = playlists
+        self.userAlbums = albums
+        return (playlists, albums)
     }
 
     private func hydrateMissingPlaylistArtwork(for lists: [SCPlaylist]) async {

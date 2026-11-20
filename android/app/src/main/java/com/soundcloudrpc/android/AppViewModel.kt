@@ -307,15 +307,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val me = api.fetchMe()
             _currentUser.value = me
             if (me != null) {
-                val likesJob = async { api.fetchLikes(me.id, limit = 60) }
+                val likesJob = async { api.fetchLikes(me.id, limit = 80) }
                 val folJob = async { api.fetchFollowing(me.id) }
+                val libJob = async { api.fetchLibraryPlaylistsAndAlbums(me.id) }
+
                 val (likedTracks, _) = likesJob.await()
                 _likes.value = likedTracks
                 _likedIds.value = likedTracks.map { it.id }.toSet()
 
+                val (pls, albs) = libJob.await()
+                _playlists.value = pls
+                _albums.value = albs
+
                 val fol = folJob.await()
                 _following.value = fol
-                rebuildQuickCards(_playlists.value, fol)
+                rebuildQuickCards(pls, fol)
             }
         }
     }
@@ -471,13 +477,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun toggleLike(trackId: Long) {
-        val userId = _currentUser.value?.id ?: return
+    fun toggleLike(trackId: Long, trackObj: SCTrack? = null) {
+        val resolvedTrack = trackObj
+            ?: _currentTrack.value?.takeIf { it.id == trackId }
+            ?: _queue.value.firstOrNull { it.id == trackId }
+            ?: _likes.value.firstOrNull { it.id == trackId }
+
         val currentlyLiked = _likedIds.value.contains(trackId)
         _likedIds.value = if (currentlyLiked) _likedIds.value - trackId else _likedIds.value + trackId
+        if (currentlyLiked) {
+            _likes.value = _likes.value.filter { it.id != trackId }
+        } else if (resolvedTrack != null && _likes.value.none { it.id == trackId }) {
+            _likes.value = listOf(resolvedTrack) + _likes.value
+        }
+
         viewModelScope.launch {
+            val userId = _currentUser.value?.id ?: api.fetchMe()?.also { _currentUser.value = it }?.id ?: return@launch
             val finalLiked = api.toggleLike(userId, trackId, currentlyLiked)
             _likedIds.value = if (finalLiked) _likedIds.value + trackId else _likedIds.value - trackId
+            showToast(if (finalLiked) "Liked & synced to SoundCloud" else "Removed from SoundCloud likes")
         }
     }
 

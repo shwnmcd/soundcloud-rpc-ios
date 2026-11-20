@@ -963,7 +963,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit, onSignOut: () -> Unit) 
             }
 
             item {
-                Text("SoundCloud RPC v2.5.2 (Native Android) • Based on richardhbtz/soundcloud-rpc (MIT)", color = Color(0xFF707076), fontSize = 12.sp)
+                Text("SoundCloud RPC v2.6 (Native Android) • Based on richardhbtz/soundcloud-rpc (MIT)", color = Color(0xFF707076), fontSize = 12.sp)
                 Spacer(Modifier.height(100.dp))
             }
         }

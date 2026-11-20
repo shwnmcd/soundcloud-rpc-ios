@@ -287,6 +287,10 @@ struct SoundCloudCapsuleMiniPlayer: View {
             HStack(spacing: 12) {
                 // Play/Pause Circle with Accent Circular Progress Ring
                 Button {
+                    if jam.isGuestLocked {
+                        api.showToast("Host controls playback in this Jam")
+                        return
+                    }
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.65)) {
                         player.togglePlayPause()
@@ -387,18 +391,20 @@ struct SoundCloudCapsuleMiniPlayer: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 24)
                     .onChanged { value in
-                        if abs(value.translation.width) > abs(value.translation.height) {
+                        if !jam.isGuestLocked && abs(value.translation.width) > abs(value.translation.height) {
                             swipeOffset = value.translation.width
                         }
                     }
                     .onEnded { value in
                         let dx = value.translation.width
-                        if dx < -55 {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            player.previousTrack(forcePrevious: true)
-                        } else if dx > 55 {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            player.nextTrack()
+                        if !jam.isGuestLocked {
+                            if dx < -55 {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                player.previousTrack(forcePrevious: true)
+                            } else if dx > 55 {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                player.nextTrack()
+                            }
                         }
                         withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
                             swipeOffset = 0

@@ -38,7 +38,8 @@ import kotlin.math.roundToInt
 fun NowPlayingOverlay(
     vm: AppViewModel,
     onDismiss: () -> Unit,
-    onOpenJam: () -> Unit = {}
+    onOpenJam: () -> Unit = {},
+    onOpenVisualizer: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val track by vm.currentTrack.collectAsState()
@@ -52,6 +53,9 @@ fun NowPlayingOverlay(
     val queue by vm.queue.collectAsState()
     val currentIndex by vm.currentIndex.collectAsState()
     val jamActive by vm.jam.isActive.collectAsState()
+    val jamIsHost by vm.jam.isHost.collectAsState()
+    val allowGuest by vm.jam.allowGuestControl.collectAsState()
+    val isGuestLocked = jamActive && !jamIsHost && !allowGuest
 
     val activeTrack = track ?: return
     val isLiked = likedIds.contains(activeTrack.id)
@@ -78,9 +82,15 @@ fun NowPlayingOverlay(
                 detectDragGestures(
                     onDragEnd = {
                         when {
-                            // Slide LEFT -> Previous Song · Slide RIGHT -> Next Song
-                            abs(dragX) > abs(dragY) && dragX < -120f -> vm.previousTrack(forcePrevious = true)
-                            abs(dragX) > abs(dragY) && dragX > 120f -> vm.nextTrack()
+                            // Slide LEFT -> Previous Song · Slide RIGHT -> Next Song (unless Guest in Host-Only Jam)
+                            abs(dragX) > abs(dragY) && dragX < -120f -> {
+                                if (!isGuestLocked) vm.previousTrack(forcePrevious = true)
+                                else vm.showToast("Host controls playback in this Jam")
+                            }
+                            abs(dragX) > abs(dragY) && dragX > 120f -> {
+                                if (!isGuestLocked) vm.nextTrack()
+                                else vm.showToast("Host controls playback in this Jam")
+                            }
                             dragY > 180f -> onDismiss()
                         }
                         dragX = 0f
@@ -202,7 +212,7 @@ fun NowPlayingOverlay(
                     Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(artist, color = Color.White.copy(alpha = 0.75f), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                IconButton(onClick = { vm.toggleLike(activeTrack.id) }) {
+                IconButton(onClick = { vm.toggleLike(activeTrack.id, activeTrack) }) {
                     Icon(
                         imageVector = if (isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
                         contentDescription = "Like",
@@ -214,15 +224,20 @@ fun NowPlayingOverlay(
 
             Spacer(Modifier.height(10.dp))
 
-            // Scrubber
+            // Scrubber (Locked when Guest in Host-Only Jam)
             Slider(
                 value = progress,
+                enabled = !isGuestLocked,
                 onValueChange = {
-                    isScrubbing = true
-                    scrubFraction = it
+                    if (!isGuestLocked) {
+                        isScrubbing = true
+                        scrubFraction = it
+                    }
                 },
                 onValueChangeFinished = {
-                    vm.seekToFraction(scrubFraction)
+                    if (!isGuestLocked) {
+                        vm.seekToFraction(scrubFraction)
+                    }
                     isScrubbing = false
                 },
                 colors = SliderDefaults.colors(
@@ -231,9 +246,19 @@ fun NowPlayingOverlay(
                     inactiveTrackColor = Color.White.copy(alpha = 0.25f)
                 )
             )
-            Row(modifier = Modifier.fillMaxWidth()) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(formatSeconds((progress * duration).toLong()), color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp)
                 Spacer(Modifier.weight(1f))
+                if (isGuestLocked) {
+                    Text(
+                        "🔒 Host controls · Tap to resync",
+                        color = SCOrange,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable { vm.jam.requestResync() }
+                    )
+                    Spacer(Modifier.weight(1f))
+                }
                 Text("-${formatSeconds((duration - (progress * duration).toLong()).coerceAtLeast(0L))}", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp)
             }
 
@@ -245,22 +270,30 @@ fun NowPlayingOverlay(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                IconButton(onClick = { vm.toggleShuffle() }) {
-                    Icon(Icons.Default.Shuffle, contentDescription = "Shuffle", tint = if (isShuffling) SCOrange else Color.White.copy(alpha = 0.8f))
+                IconButton(onClick = {
+                    if (!isGuestLocked) vm.toggleShuffle() else vm.showToast("Host controls playback in this Jam")
+                }) {
+                    Icon(Icons.Default.Shuffle, contentDescription = "Shuffle", tint = if (isShuffling) SCOrange else Color.White.copy(alpha = if (isGuestLocked) 0.35f else 0.8f))
                 }
-                IconButton(onClick = { vm.previousTrack() }) {
-                    Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(34.dp))
+                IconButton(onClick = {
+                    if (!isGuestLocked) vm.previousTrack() else vm.showToast("Host controls playback in this Jam")
+                }) {
+                    Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", tint = Color.White.copy(alpha = if (isGuestLocked) 0.35f else 1f), modifier = Modifier.size(34.dp))
                 }
                 Box(
                     modifier = Modifier
                         .size(66.dp)
                         .clip(CircleShape)
-                        .background(Color.White)
-                        .clickable { vm.togglePlayPause() },
+                        .background(Color.White.copy(alpha = if (isGuestLocked) 0.5f else 1f))
+                        .clickable {
+                            if (!isGuestLocked) vm.togglePlayPause() else vm.showToast("Host controls playback in this Jam")
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     if (isBuffering) {
                         CircularProgressIndicator(color = Color.Black, strokeWidth = 2.5.dp, modifier = Modifier.size(26.dp))
+                    } else if (isGuestLocked) {
+                        Icon(Icons.Default.Lock, contentDescription = "Host Locked", tint = Color.Black, modifier = Modifier.size(26.dp))
                     } else {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -270,21 +303,25 @@ fun NowPlayingOverlay(
                         )
                     }
                 }
-                IconButton(onClick = { vm.nextTrack() }) {
-                    Icon(Icons.Default.SkipNext, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(34.dp))
+                IconButton(onClick = {
+                    if (!isGuestLocked) vm.nextTrack() else vm.showToast("Host controls playback in this Jam")
+                }) {
+                    Icon(Icons.Default.SkipNext, contentDescription = "Next", tint = Color.White.copy(alpha = if (isGuestLocked) 0.35f else 1f), modifier = Modifier.size(34.dp))
                 }
-                IconButton(onClick = { vm.cycleRepeat() }) {
+                IconButton(onClick = {
+                    if (!isGuestLocked) vm.cycleRepeat() else vm.showToast("Host controls playback in this Jam")
+                }) {
                     Icon(
                         imageVector = if (repeatMode == RepeatMode.ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
                         contentDescription = "Repeat",
-                        tint = if (repeatMode == RepeatMode.NONE) Color.White.copy(alpha = 0.8f) else SCOrange
+                        tint = if (repeatMode == RepeatMode.NONE) Color.White.copy(alpha = if (isGuestLocked) 0.35f else 0.8f) else SCOrange
                     )
                 }
             }
 
             Spacer(Modifier.height(14.dp))
 
-            // Elevated Utility Dock Pill
+            // Elevated Utility Dock Pill (VFD Visualizer · Group Jam · Discord RPC · Share · Queue)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -294,6 +331,9 @@ fun NowPlayingOverlay(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(onClick = onOpenVisualizer) {
+                    Icon(Icons.Default.Equalizer, contentDescription = "VFD Visualizer", tint = Color(0xFF2EF59E))
+                }
                 IconButton(onClick = onOpenJam) {
                     Icon(Icons.Default.Groups, contentDescription = "Group Jam", tint = if (jamActive) SCOrange else Color.White.copy(alpha = 0.85f))
                 }

@@ -348,7 +348,7 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("App", value: "SoundCloud RPC v2.5 (Native iOS & iPadOS)")
+                    LabeledContent("App", value: "SoundCloud RPC v2.6 (Native iOS & iPadOS)")
                     LabeledContent("Based on", value: "richardhbtz/soundcloud-rpc (MIT)")
                 }
             }

@@ -68,7 +68,9 @@ data class SCTrack(
 data class SCPlaylist(
     val id: Long = 0,
     val title: String? = null,
+    @SerializedName("short_title") val shortTitle: String? = null,
     @SerializedName("artwork_url") val artworkUrl: String? = null,
+    @SerializedName("calculated_artwork_url") val calculatedArtworkUrl: String? = null,
     @SerializedName("permalink_url") val permalinkUrl: String? = null,
     @SerializedName("track_count") val trackCount: Int? = null,
     val duration: Long? = null,
@@ -77,13 +79,18 @@ data class SCPlaylist(
     val user: SCUser? = null,
     val tracks: List<SCTrack>? = null
 ) {
-    val displayTitle: String get() = title?.ifBlank { "Untitled Playlist" } ?: "Untitled Playlist"
+    val resolvedTitle: String?
+        get() = title?.trim()?.takeIf { it.isNotEmpty() }
+            ?: shortTitle?.trim()?.takeIf { it.isNotEmpty() }
+    val hasRealTitle: Boolean get() = resolvedTitle != null
+    val displayTitle: String get() = resolvedTitle ?: "Untitled Playlist"
     val creatorName: String get() = user?.displayName ?: "SoundCloud"
     val isPrivate: Boolean get() = sharing == "private"
     val resolvedTrackCount: Int get() = trackCount ?: tracks?.size ?: 0
     val formattedDuration: String get() = formatSeconds((duration ?: 0L) / 1000L)
     val rawArtwork: String?
         get() = artworkUrl?.takeIf { it.isNotBlank() }
+            ?: calculatedArtworkUrl?.takeIf { it.isNotBlank() }
             ?: tracks?.firstOrNull { !it.rawArtwork.isNullOrBlank() }?.rawArtwork
             ?: user?.avatarUrl
 }

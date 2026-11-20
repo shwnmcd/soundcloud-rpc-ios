@@ -119,8 +119,11 @@ class JamSessionManager(
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
-    private val _allowGuestControl = MutableStateFlow(true)
+    private val _allowGuestControl = MutableStateFlow(false)
     val allowGuestControl: StateFlow<Boolean> = _allowGuestControl.asStateFlow()
+
+    val isGuestLocked: Boolean
+        get() = _isActive.value && !_isHost.value && !_allowGuestControl.value
 
     private val _participants = MutableStateFlow<List<JamParticipant>>(emptyList())
     val participants: StateFlow<List<JamParticipant>> = _participants.asStateFlow()
@@ -152,7 +155,7 @@ class JamSessionManager(
         _roomCode.value = code
         _isHost.value = true
         _isActive.value = true
-        _allowGuestControl.value = true
+        _allowGuestControl.value = false
         lastNtfyId = null
         reconnectAttempt = 0
         _statusNote.value = "Hosting live Jam"

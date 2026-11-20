@@ -50,6 +50,21 @@ struct JamSessionSheet: View {
             .navigationTitle(jam.isActive ? "Live Jam" : "Group Listening")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if jam.isActive {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(role: .destructive) {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) {
+                                jam.leaveJam()
+                            }
+                        } label: {
+                            Text(jam.isHost ? "End Jam" : "Leave")
+                                .fontWeight(.bold)
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
+
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
@@ -390,50 +405,127 @@ struct JamSessionSheet: View {
             .background(theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-            // Host Controls Toggle OR Guest Resync Bar
-            HStack(spacing: 12) {
+            // Now Playing in Jam Card (Like any song played in the Jam directly to YOUR SoundCloud!)
+            if let current = player.currentTrack {
+                let currentLiked = api.likedTrackIds.contains(current.id)
+                HStack(spacing: 12) {
+                    HDArtworkView(rawUrl: current.rawArtwork, cornerRadius: 8)
+                        .frame(width: 52, height: 52)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("NOW PLAYING IN JAM")
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(0.7)
+                            .foregroundColor(theme.accent)
+                        Text(current.displayTitle)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundColor(theme.textPrimary)
+                            .lineLimit(1)
+                        Text(current.artistName)
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    AnimatedHeartButton(
+                        isLiked: currentLiked,
+                        size: 22,
+                        accentColor: theme.accent,
+                        inactiveColor: theme.textSecondary
+                    ) {
+                        Task { _ = await api.toggleLike(track: current) }
+                    }
+                }
+                .padding(12)
+                .background(theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(theme.divider, lineWidth: 0.7))
+            }
+
+            // Host Playback Control Mode (Host Only vs Everyone) OR Guest Status + Resync Bar
+            VStack(alignment: .leading, spacing: 10) {
                 if jam.isHost {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Let guests control playback")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(theme.textPrimary)
-                        Text("Allow friends to pause, skip & scrub for everyone")
-                            .font(.caption2)
-                            .foregroundColor(theme.textSecondary)
-                    }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { jam.allowGuestControl },
-                        set: { jam.setAllowGuestControl($0) }
-                    ))
-                    .labelsHidden()
-                    .tint(theme.accent)
-                } else {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(jam.allowGuestControl ? "Shared Controls Enabled" : "Host Controls Playback")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(theme.textPrimary)
-                        Text("You can queue tracks & send live reactions anytime")
-                            .font(.caption2)
-                            .foregroundColor(theme.textSecondary)
-                    }
-                    Spacer()
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        jam.requestResync()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                            Text("Resync")
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Who can control playback")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundColor(theme.textPrimary)
+                            Text(jam.allowGuestControl ? "Everyone can play, pause, skip & scrub" : "Only you (Host) control playback — guests stay synced")
+                                .font(.caption2)
+                                .foregroundColor(theme.textSecondary)
                         }
-                        .font(.caption.weight(.bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(theme.accent)
-                        .clipShape(Capsule())
+                        Spacer()
                     }
-                    .buttonStyle(SpringPressButtonStyle())
+
+                    HStack(spacing: 8) {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
+                                jam.setAllowGuestControl(false)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "lock.fill").font(.caption.bold())
+                                Text("Host Only").font(.caption.weight(.bold))
+                            }
+                            .foregroundColor(!jam.allowGuestControl ? .white : theme.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(!jam.allowGuestControl ? theme.accent : theme.surfaceElevated)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(SpringPressButtonStyle(pressedScale: 0.94))
+
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
+                                jam.setAllowGuestControl(true)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "person.2.fill").font(.caption.bold())
+                                Text("Everyone").font(.caption.weight(.bold))
+                            }
+                            .foregroundColor(jam.allowGuestControl ? .white : theme.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(jam.allowGuestControl ? theme.accent : theme.surfaceElevated)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(SpringPressButtonStyle(pressedScale: 0.94))
+                    }
+                } else {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 5) {
+                                Image(systemName: jam.allowGuestControl ? "person.2.fill" : "lock.fill")
+                                    .font(.caption)
+                                    .foregroundColor(theme.accent)
+                                Text(jam.allowGuestControl ? "Shared Controls Enabled" : "Host-Only Controls Active")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(theme.textPrimary)
+                            }
+                            Text("Like any track, add to queue, or send live reactions")
+                                .font(.caption2)
+                                .foregroundColor(theme.textSecondary)
+                        }
+                        Spacer()
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            jam.requestResync()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                Text("Resync")
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(theme.accent)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(SpringPressButtonStyle())
+                    }
                 }
             }
             .padding(14)
@@ -541,6 +633,7 @@ struct JamSessionSheet: View {
                     VStack(spacing: 6) {
                         ForEach(jam.sharedQueue) { item in
                             let isCurrent = player.currentTrack?.id == item.id
+                            let itemLiked = api.likedTrackIds.contains(item.id)
                             HStack(spacing: 10) {
                                 HDArtworkView(rawUrl: item.artworkUrl, cornerRadius: 6)
                                     .frame(width: 42, height: 42)
@@ -558,11 +651,19 @@ struct JamSessionSheet: View {
                                 if isCurrent {
                                     AnimatedEqualizerBars(isPlaying: player.isPlaying, color: theme.accent, maxHeight: 14)
                                 }
+                                AnimatedHeartButton(
+                                    isLiked: itemLiked,
+                                    size: 17,
+                                    accentColor: theme.accent,
+                                    inactiveColor: theme.textSecondary
+                                ) {
+                                    Task { _ = await api.toggleLike(track: item.toSCTrack()) }
+                                }
                             }
                             .padding(.vertical, 3)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                if jam.isHost || jam.allowGuestControl {
+                                if jam.canControlPlayback {
                                     let tracks = jam.sharedQueue.map { $0.toSCTrack() }
                                     if let chosen = tracks.first(where: { $0.id == item.id }) {
                                         player.play(track: chosen, in: tracks)

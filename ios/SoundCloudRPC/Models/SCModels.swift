@@ -158,7 +158,9 @@ struct SCTrack: Identifiable, Codable, Hashable {
 struct SCPlaylist: Identifiable, Codable, Hashable {
     let id: Int
     let title: String?
+    let shortTitle: String?
     let artworkUrl: String?
+    let calculatedArtworkUrl: String?
     let permalinkUrl: String?
     let trackCount: Int?
     let duration: Int?
@@ -169,14 +171,26 @@ struct SCPlaylist: Identifiable, Codable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, duration, sharing, user, tracks
+        case shortTitle = "short_title"
         case artworkUrl = "artwork_url"
+        case calculatedArtworkUrl = "calculated_artwork_url"
         case permalinkUrl = "permalink_url"
         case trackCount = "track_count"
         case isAlbum = "is_album"
     }
 
+    var resolvedTitle: String? {
+        if let t = title?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { return t }
+        if let s = shortTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty { return s }
+        return nil
+    }
+
+    var hasRealTitle: Bool {
+        resolvedTitle != nil
+    }
+
     var displayTitle: String {
-        title ?? "Untitled Playlist"
+        resolvedTitle ?? "Untitled Playlist"
     }
 
     var creatorName: String {
@@ -197,6 +211,7 @@ struct SCPlaylist: Identifiable, Codable, Hashable {
 
     var rawArtwork: String? {
         if let art = artworkUrl, !art.isEmpty { return art }
+        if let calc = calculatedArtworkUrl, !calc.isEmpty { return calc }
         if let firstArt = tracks?.first(where: { $0.rawArtwork != nil })?.rawArtwork { return firstArt }
         return user?.avatarUrl
     }

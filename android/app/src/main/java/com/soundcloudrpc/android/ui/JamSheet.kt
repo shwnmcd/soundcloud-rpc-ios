@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,6 +52,7 @@ fun JamBottomSheet(
     val statusNote by vm.jam.statusNote.collectAsState()
     val recentReaction by vm.jam.recentReaction.collectAsState()
     val currentTrack by vm.currentTrack.collectAsState()
+    val likedIds by vm.likedIds.collectAsState()
 
     var codeInput by remember { mutableStateOf("") }
     var copied by remember { mutableStateOf(false) }
@@ -62,6 +64,41 @@ fun JamBottomSheet(
         containerColor = SCBg,
         dragHandle = { BottomSheetDefaults.DragHandle(color = Color.White.copy(alpha = 0.25f)) }
     ) {
+        // Sticky Top Header Bar with Prominent "Leave / End Jam" Button (Zero Scrolling Needed!)
+        if (isActive) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    if (isHost) "End Jam" else "Leave Jam",
+                    color = Color(0xFFFF453A),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(Color(0x28FF453A))
+                        .clickable {
+                            vm.jam.leaveJam()
+                            onDismiss()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+                Text("Live Jam", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(
+                    "Done",
+                    color = SCOrange,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.clickable { onDismiss() }.padding(horizontal = 6.dp, vertical = 6.dp)
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -242,38 +279,94 @@ fun JamBottomSheet(
                     }
                 }
 
-                // Controls + Reactions
+                // Now Playing in Jam Card with 1-Tap Like Synced to Your SoundCloud!
+                currentTrack?.let { cur ->
+                    item {
+                        val curLiked = likedIds.contains(cur.id)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(SCSurface)
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            HDArtwork(rawUrl = cur.rawArtwork, cornerRadius = 8.dp, modifier = Modifier.size(48.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("NOW PLAYING IN JAM", color = SCOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(cur.displayTitle, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(cur.artistName, color = Color.White.copy(alpha = 0.65f), fontSize = 12.sp, maxLines = 1)
+                            }
+                            IconButton(onClick = { vm.toggleLike(cur.id, cur) }) {
+                                Icon(
+                                    if (curLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = "Like Jam Track",
+                                    tint = if (curLiked) SCOrange else Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Host Playback Control Mode (Host Only vs Everyone) OR Guest Status + Resync
                 item {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
                             .background(SCSurface)
                             .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         if (isHost) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Let guests control playback", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("Friends can play, pause, skip & scrub", color = Color.White.copy(alpha = 0.6f), fontSize = 11.5.sp)
+                            Column {
+                                Text("Who can control playback", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(
+                                    if (allowGuest) "Everyone can play, pause, skip & scrub" else "Only you (Host) control playback — guests stay synced",
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontSize = 11.5.sp
+                                )
                             }
-                            Switch(
-                                checked = allowGuest,
-                                onCheckedChange = { vm.jam.setAllowGuestControl(it) },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = SCOrange)
-                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { vm.jam.setAllowGuestControl(false) },
+                                    shape = CircleShape,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (!allowGuest) SCOrange else Color.White.copy(alpha = 0.12f)
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🔒 Host Only", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                                Button(
+                                    onClick = { vm.jam.setAllowGuestControl(true) },
+                                    shape = CircleShape,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (allowGuest) SCOrange else Color.White.copy(alpha = 0.12f)
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("👥 Everyone", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
                         } else {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(if (allowGuest) "Shared Controls Enabled" else "Host Controls Playback", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("Tap Resync if audio ever drifts", color = Color.White.copy(alpha = 0.6f), fontSize = 11.5.sp)
-                            }
-                            Button(
-                                onClick = { vm.jam.requestResync() },
-                                shape = CircleShape,
-                                colors = ButtonDefaults.buttonColors(containerColor = SCOrange)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Resync", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(if (allowGuest) "Shared Controls Enabled" else "🔒 Host-Only Controls Active", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("Like any track, add to queue, or send reactions", color = Color.White.copy(alpha = 0.6f), fontSize = 11.5.sp)
+                                }
+                                Button(
+                                    onClick = { vm.jam.requestResync() },
+                                    shape = CircleShape,
+                                    colors = ButtonDefaults.buttonColors(containerColor = SCOrange)
+                                ) {
+                                    Text("Resync", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
                             }
                         }
                     }
@@ -358,6 +451,7 @@ fun JamBottomSheet(
                     }
                     items(sharedQueue) { item ->
                         val isCur = currentTrack?.id == item.id
+                        val itemLiked = likedIds.contains(item.id)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -367,6 +461,14 @@ fun JamBottomSheet(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(item.title, color = if (isCur) SCOrange else Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(item.artist, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, maxLines = 1)
+                            }
+                            IconButton(onClick = { vm.toggleLike(item.id, item.toSCTrack()) }) {
+                                Icon(
+                                    if (itemLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = "Like",
+                                    tint = if (itemLiked) SCOrange else Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     }

@@ -97,6 +97,26 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(jamRelayUrl, forKey: "jamRelayUrl") }
     }
 
+    // VFD Retro Spectrum Visualizer Customization
+    @Published var vizMode: String {
+        didSet { defaults.set(vizMode, forKey: "vizMode") }
+    }
+    @Published var vizColor: String {
+        didSet { defaults.set(vizColor, forKey: "vizColor") }
+    }
+    @Published var vizBands: Int {
+        didSet { defaults.set(vizBands, forKey: "vizBands") }
+    }
+    @Published var vizSensitivity: Double {
+        didSet { defaults.set(vizSensitivity, forKey: "vizSensitivity") }
+    }
+    @Published var vizPeakHold: Bool {
+        didSet { defaults.set(vizPeakHold, forKey: "vizPeakHold") }
+    }
+    @Published var vizShowBezel: Bool {
+        didSet { defaults.set(vizShowBezel, forKey: "vizShowBezel") }
+    }
+
     // Themes
     @Published var selectedCustomTheme: String {
         didSet { defaults.set(selectedCustomTheme, forKey: "selectedCustomTheme") }
@@ -138,6 +158,13 @@ final class AppSettings: ObservableObject {
         self.webhookDiscordFormat = defaults.object(forKey: "webhookDiscordFormat") as? Bool ?? false
 
         self.jamRelayUrl = defaults.string(forKey: "jamRelayUrl") ?? "https://ntfy.sh"
+        self.vizMode = defaults.string(forKey: "vizMode") ?? "spectrum"
+        self.vizColor = defaults.string(forKey: "vizColor") ?? "vfdMint"
+        let savedBands = defaults.integer(forKey: "vizBands")
+        self.vizBands = savedBands > 0 ? savedBands : 24
+        self.vizSensitivity = defaults.object(forKey: "vizSensitivity") as? Double ?? 1.15
+        self.vizPeakHold = defaults.object(forKey: "vizPeakHold") as? Bool ?? true
+        self.vizShowBezel = defaults.object(forKey: "vizShowBezel") as? Bool ?? true
         self.selectedCustomTheme = defaults.string(forKey: "selectedCustomTheme") ?? ""
     }
 

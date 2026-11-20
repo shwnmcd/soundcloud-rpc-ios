@@ -89,6 +89,7 @@ struct NowPlayingSheetView: View {
     @State private var showQueueSheet = false
     @State private var showAddToPlaylist = false
     @State private var showJamSheet = false
+    @State private var showVisualizer = false
     @State private var dismissDragOffset: CGFloat = 0
     @State private var swipeXOffset: CGFloat = 0
 
@@ -167,9 +168,28 @@ struct NowPlayingSheetView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 6)
 
-                // Sleek Animated 3-Style Switcher Pill (Vinyl Record · Full Artwork · Ambient Card)
+                // Sleek Animated 3-Style Switcher Pill + Fullscreen VFD Visualizer Toggle + Live Jam Badge
                 HStack(spacing: 8) {
                     playbackStyleSwitcher
+
+                    Button {
+                        haptic(.medium)
+                        showVisualizer = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "waveform.path.ecg")
+                                .font(.system(size: 12, weight: .bold))
+                            Text("VFD")
+                                .font(.system(size: 11, weight: .black, design: .monospaced))
+                        }
+                        .foregroundColor(Color(red: 0.18, green: 0.96, blue: 0.62))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Color.black.opacity(useLightInk ? 0.55 : 0.82))
+                        .overlay(Capsule().stroke(Color(red: 0.18, green: 0.96, blue: 0.62).opacity(0.55), lineWidth: 1))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(SpringPressButtonStyle(pressedScale: 0.90))
 
                     if jam.isActive {
                         Button {
@@ -275,7 +295,9 @@ struct NowPlayingSheetView: View {
                             let dx = value.translation.width
                             let dy = value.translation.height
                             if abs(dx) > abs(dy) {
-                                swipeXOffset = dx
+                                if !jam.isGuestLocked {
+                                    swipeXOffset = dx
+                                }
                             } else if dy > 0 {
                                 dismissDragOffset = dy
                             }
@@ -284,17 +306,21 @@ struct NowPlayingSheetView: View {
                             let dx = value.translation.width
                             let dy = value.translation.height
                             if abs(dx) > abs(dy) {
-                                // User preference: Slide LEFT -> Previous Song · Slide RIGHT -> Next Song!
-                                if dx < -55 {
-                                    haptic(.medium)
-                                    withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
-                                        player.previousTrack(forcePrevious: true)
+                                if !jam.isGuestLocked {
+                                    // User preference: Slide LEFT -> Previous Song · Slide RIGHT -> Next Song!
+                                    if dx < -55 {
+                                        haptic(.medium)
+                                        withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
+                                            player.previousTrack(forcePrevious: true)
+                                        }
+                                    } else if dx > 55 {
+                                        haptic(.medium)
+                                        withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
+                                            player.nextTrack()
+                                        }
                                     }
-                                } else if dx > 55 {
-                                    haptic(.medium)
-                                    withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
-                                        player.nextTrack()
-                                    }
+                                } else if abs(dx) > 55 {
+                                    api.showToast("Host controls playback in this Jam")
                                 }
                                 withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
                                     swipeXOffset = 0
@@ -353,6 +379,15 @@ struct NowPlayingSheetView: View {
                 .environmentObject(api)
                 .environment(\.scTheme, theme)
                 .preferredColorScheme(settings.themeMode.preferredColorScheme)
+        }
+        .fullScreenCover(isPresented: $showVisualizer) {
+            VFDVisualizerView(
+                player: player,
+                api: api,
+                settings: settings,
+                jam: jam
+            )
+            .preferredColorScheme(.dark)
         }
     }
 
@@ -502,6 +537,20 @@ struct NowPlayingSheetView: View {
                     Label("View Up Next (\(player.queue.count))", systemImage: "list.bullet")
                 }
 
+                Button {
+                    showVisualizer = true
+                } label: {
+                    Label("Fullscreen VFD Visualizer", systemImage: "waveform.path.ecg")
+                }
+
+                if jam.isActive {
+                    Button(role: .destructive) {
+                        jam.leaveJam()
+                    } label: {
+                        Label(jam.isHost ? "End Jam Session" : "Leave Jam Session", systemImage: "xmark.circle")
+                    }
+                }
+
                 if let urlStr = track?.permalinkUrl, let shareURL = URL(string: urlStr) {
                     ShareLink(item: shareURL) {
                         Label("Share Track", systemImage: "square.and.arrow.up")
@@ -624,23 +673,42 @@ struct NowPlayingSheetView: View {
             }
             .offset(x: swipeXOffset * 0.18)
 
-            // Native Instant AVPlayer Scrubber
+            // Native Instant AVPlayer Scrubber (Locked when Guest in Host-Only Jam)
             VStack(spacing: 2) {
                 SleekScrubberBar(
                     progress: Binding(
                         get: { displayedProgress },
-                        set: { scrubValue = $0 }
+                        set: { if !jam.isGuestLocked { scrubValue = $0 } }
                     ),
                     isScrubbing: $isScrubbing,
                     trackColor: fgPrimary,
                     trackBgColor: useLightInk ? Color.white.opacity(0.24) : Color.black.opacity(0.14)
                 ) { committedFraction in
-                    player.seek(toFraction: committedFraction)
+                    if !jam.isGuestLocked {
+                        player.seek(toFraction: committedFraction)
+                    }
                 }
+                .allowsHitTesting(!jam.isGuestLocked)
+                .opacity(jam.isGuestLocked ? 0.65 : 1.0)
 
                 HStack {
                     Text(TrackTimeParser.format(displayedProgress * player.durationSeconds))
                     Spacer()
+                    if jam.isGuestLocked {
+                        Button {
+                            haptic(.light)
+                            jam.requestResync()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "lock.fill").font(.system(size: 9.5))
+                                Text("Host controls · Tap to resync")
+                            }
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundColor(theme.accent)
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                    }
                     Text("-\(TrackTimeParser.format(max(0, player.durationSeconds - displayedProgress * player.durationSeconds)))")
                 }
                 .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
@@ -650,6 +718,10 @@ struct NowPlayingSheetView: View {
             // Primary Transport Row: Shuffle · Prev · Play/Pause · Next · Repeat
             HStack(alignment: .center, spacing: 0) {
                 Button {
+                    guard !jam.isGuestLocked else {
+                        api.showToast("Host controls playback in this Jam")
+                        return
+                    }
                     haptic(.light)
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
                         player.toggleShuffle()
@@ -665,6 +737,10 @@ struct NowPlayingSheetView: View {
                 .frame(maxWidth: .infinity)
 
                 Button {
+                    guard !jam.isGuestLocked else {
+                        api.showToast("Host controls playback in this Jam")
+                        return
+                    }
                     haptic(.light)
                     withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) {
                         player.previousTrack()
@@ -680,6 +756,10 @@ struct NowPlayingSheetView: View {
                 .frame(maxWidth: .infinity)
 
                 Button {
+                    guard !jam.isGuestLocked else {
+                        api.showToast("Host controls playback in this Jam")
+                        return
+                    }
                     haptic(.medium)
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.65)) {
                         player.togglePlayPause()
@@ -692,6 +772,10 @@ struct NowPlayingSheetView: View {
                             .shadow(color: .black.opacity(useLightInk ? 0.42 : 0.18), radius: 12, x: 0, y: 4)
                         if player.isLoadingTrack {
                             ProgressView().tint(playCircleIcon)
+                        } else if jam.isGuestLocked {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundColor(playCircleIcon.opacity(0.65))
                         } else {
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 25, weight: .bold))
@@ -705,6 +789,10 @@ struct NowPlayingSheetView: View {
                 .frame(maxWidth: .infinity)
 
                 Button {
+                    guard !jam.isGuestLocked else {
+                        api.showToast("Host controls playback in this Jam")
+                        return
+                    }
                     haptic(.light)
                     withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) {
                         player.nextTrack()
@@ -720,6 +808,10 @@ struct NowPlayingSheetView: View {
                 .frame(maxWidth: .infinity)
 
                 Button {
+                    guard !jam.isGuestLocked else {
+                        api.showToast("Host controls playback in this Jam")
+                        return
+                    }
                     haptic(.light)
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
                         player.cycleRepeat()
@@ -734,6 +826,7 @@ struct NowPlayingSheetView: View {
                 .buttonStyle(SpringPressButtonStyle(pressedScale: 0.86))
                 .frame(maxWidth: .infinity)
             }
+            .opacity(jam.isGuestLocked ? 0.55 : 1.0)
             .padding(.vertical, 2)
 
             // Elevated Utility Dock: AirPlay · Jam · Add to Playlist · Discord RPC · Queue

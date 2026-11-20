@@ -105,8 +105,18 @@ final class JamSessionService: ObservableObject {
     @Published private(set) var participants: [JamParticipant] = []
     @Published private(set) var sharedQueue: [JamTrackRef] = []
     @Published private(set) var activeReactions: [JamReactionBurst] = []
-    @Published var allowGuestControl: Bool = true
+    @Published var allowGuestControl: Bool = false
     @Published var statusNote: String = ""
+
+    /// True when the local user is allowed to control playback (Play/Pause/Skip/Scrub)
+    var canControlPlayback: Bool {
+        !isActive || isHost || allowGuestControl
+    }
+
+    /// True when the local user is a Guest in a Host-Only Jam
+    var isGuestLocked: Bool {
+        isActive && !isHost && !allowGuestControl
+    }
 
     weak var player: AudioPlayerService?
     weak var api: SoundCloudAPI?
@@ -206,7 +216,7 @@ final class JamSessionService: ObservableObject {
         self.roomCode = code
         self.isHost = true
         self.isActive = true
-        self.allowGuestControl = true
+        self.allowGuestControl = false
         self.lastNtfyEventId = nil
         self.reconnectAttempt = 0
         self.statusNote = "Hosting live Jam"

@@ -112,7 +112,7 @@ class SoundCloudApi(
         // Fallback for SoundCloud system_playlist (string URN id!)
         val urn = obj.optString("urn") ?: obj.optString("id") ?: return null
         val safeId = urn.hashCode().toLong()
-        val title = obj.optString("title") ?: "SoundCloud Mix"
+        val title = obj.optString("title") ?: obj.optString("short_title") ?: return null
         val artwork = obj.optString("artwork_url") ?: obj.optString("calculated_artwork_url")
         val permalink = obj.optString("permalink_url")
         val user = obj.optObj("user")?.let { runCatching { gson.fromJson(it, SCUser::class.java) }.getOrNull() }
@@ -150,7 +150,7 @@ class SoundCloudApi(
             val id = obj.optString("urn") ?: "shelf-$shelfIdx"
             val title = obj.optString("title") ?: "Recommended"
             val itemsCol = obj.optObj("items")?.optArray("collection") ?: continue
-            val playlists = itemsCol.mapNotNull { item -> parsePlaylistElement(item) }
+            val playlists = itemsCol.mapNotNull { item -> parsePlaylistElement(item) }.filter { it.hasRealTitle }
             if (playlists.isNotEmpty()) {
                 result.add(SCHomeShelf("$id-$shelfIdx", title, playlists))
                 shelfIdx++
@@ -175,25 +175,104 @@ class SoundCloudApi(
             tracks to next
         }.getOrDefault(emptyList<SCTrack>() to null)
 
-    suspend fun fetchLibraryPlaylistsAndAlbums(): Pair<List<SCPlaylist>, List<SCPlaylist>> =
-        runCatching<Pair<List<SCPlaylist>, List<SCPlaylist>>> {
-            val root = JsonParser.parseString(
-                requestJson("https://api-v2.soundcloud.com/me/library/all?limit=100")
-            ).takeIf { it.isJsonObject }?.asJsonObject
-                ?: return@runCatching (emptyList<SCPlaylist>() to emptyList<SCPlaylist>())
-            val col = root.optArray("collection")
-                ?: return@runCatching (emptyList<SCPlaylist>() to emptyList<SCPlaylist>())
+    suspend fun fetchLibraryPlaylistsAndAlbums(userId: Long? = null): Pair<List<SCPlaylist>, List<SCPlaylist>> =
+        coroutineScope {
+            val allLibDef = async {
+                runCatching {
+                    val root = JsonParser.parseString(
+                        requestJson("https://api-v2.soundcloud.com/me/library/all?limit=100")
+                    ).takeIf { it.isJsonObject }?.asJsonObject ?: return@runCatching emptyList<SCPlaylist>()
+                    val col = root.optArray("collection") ?: return@runCatching emptyList<SCPlaylist>()
+                    col.mapNotNull { el ->
+                        if (!el.isJsonObject) return@mapNotNull null
+                        val obj = el.asJsonObject
+                        val raw = obj.optObj("playlist") ?: obj.optObj("system_playlist") ?: return@mapNotNull null
+                        parsePlaylistElement(raw)
+                    }
+                }.getOrDefault(emptyList())
+            }
+
+            val createdDef = async {
+                if (userId == null) return@async emptyList<SCPlaylist>()
+                runCatching {
+                    val root = JsonParser.parseString(
+                        requestJson("https://api-v2.soundcloud.com/users/$userId/playlists_without_albums?limit=100")
+                    ).takeIf { it.isJsonObject }?.asJsonObject ?: return@runCatching emptyList<SCPlaylist>()
+                    root.optArray("collection")?.mapNotNull { parsePlaylistElement(it) } ?: emptyList()
+                }.getOrDefault(emptyList())
+            }
+
+            val likedPlDef = async {
+                if (userId == null) return@async emptyList<SCPlaylist>()
+                runCatching {
+                    val root = JsonParser.parseString(
+                        requestJson("https://api-v2.soundcloud.com/users/$userId/playlist_likes?limit=100")
+                    ).takeIf { it.isJsonObject }?.asJsonObject ?: return@runCatching emptyList<SCPlaylist>()
+                    root.optArray("collection")?.mapNotNull { el ->
+                        if (!el.isJsonObject) return@mapNotNull null
+                        val raw = el.asJsonObject.optObj("playlist") ?: el
+                        parsePlaylistElement(raw)
+                    } ?: emptyList()
+                }.getOrDefault(emptyList())
+            }
+
+            val albumsDef = async {
+                if (userId == null) return@async emptyList<SCPlaylist>()
+                runCatching {
+                    val root = JsonParser.parseString(
+                        requestJson("https://api-v2.soundcloud.com/users/$userId/albums?limit=100")
+                    ).takeIf { it.isJsonObject }?.asJsonObject ?: return@runCatching emptyList<SCPlaylist>()
+                    root.optArray("collection")?.mapNotNull { parsePlaylistElement(it) } ?: emptyList()
+                }.getOrDefault(emptyList())
+            }
+
+            val orderedIds = mutableListOf<Long>()
+            val byId = LinkedHashMap<Long, SCPlaylist>()
+
+            fun merge(list: List<SCPlaylist>) {
+                for (pl in list) {
+                    val existing = byId[pl.id]
+                    if (existing != null) {
+                        val oldScore = (if (existing.hasRealTitle) 10 else 0) + (if (!existing.artworkUrl.isNullOrBlank()) 4 else 0) + (existing.tracks?.size ?: 0)
+                        val newScore = (if (pl.hasRealTitle) 10 else 0) + (if (!pl.artworkUrl.isNullOrBlank()) 4 else 0) + (pl.tracks?.size ?: 0)
+                        if (newScore > oldScore) byId[pl.id] = pl
+                    } else {
+                        orderedIds.add(pl.id)
+                        byId[pl.id] = pl
+                    }
+                }
+            }
+
+            merge(createdDef.await())
+            merge(likedPlDef.await())
+            merge(albumsDef.await())
+            merge(allLibDef.await())
+
+            // Hydrate any remaining stub playlists missing a title
+            val missing = orderedIds.filter { id ->
+                val p = byId[id]
+                p != null && !p.hasRealTitle && p.id > 0L
+            }.take(20)
+
+            for (stubId in missing) {
+                runCatching {
+                    val full = gson.fromJson(
+                        requestJson("https://api-v2.soundcloud.com/playlists/$stubId"),
+                        SCPlaylist::class.java
+                    )
+                    if (full != null && full.hasRealTitle) byId[stubId] = full
+                }
+            }
+
             val playlists = mutableListOf<SCPlaylist>()
             val albums = mutableListOf<SCPlaylist>()
-            for (el in col) {
-                if (!el.isJsonObject) continue
-                val obj = el.asJsonObject
-                val raw = obj.optObj("playlist") ?: obj.optObj("system_playlist") ?: continue
-                val pl = parsePlaylistElement(raw) ?: continue
+            for (id in orderedIds) {
+                val pl = byId[id] ?: continue
+                if (!pl.hasRealTitle) continue
                 if (pl.isAlbum == true) albums.add(pl) else playlists.add(pl)
             }
             playlists.toList() to albums.toList()
-        }.getOrDefault(emptyList<SCPlaylist>() to emptyList<SCPlaylist>())
+        }
 
     suspend fun fetchFullPlaylistTracks(playlistId: Long, fallbackTracks: List<SCTrack>? = null): Pair<SCPlaylist?, List<SCTrack>> =
         runCatching<Pair<SCPlaylist?, List<SCTrack>>> {

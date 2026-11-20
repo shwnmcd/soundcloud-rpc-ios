@@ -77,6 +77,7 @@ fun SoundCloudRPCAndroidApp(initialJamDeepLink: String? = null, vm: AppViewModel
     var showNowPlaying by remember { mutableStateOf(false) }
     var showSignInWeb by remember { mutableStateOf(false) }
     var showJamSheet by remember { mutableStateOf(false) }
+    var showVisualizer by remember { mutableStateOf(false) }
 
     LaunchedEffect(initialJamDeepLink, isLoggedIn) {
         if (isLoggedIn && !initialJamDeepLink.isNullOrBlank() && !jamActive) {
@@ -85,8 +86,9 @@ fun SoundCloudRPCAndroidApp(initialJamDeepLink: String? = null, vm: AppViewModel
         }
     }
 
-    BackHandler(enabled = showNowPlaying || backStack.isNotEmpty() || showSignInWeb) {
+    BackHandler(enabled = showVisualizer || showNowPlaying || backStack.isNotEmpty() || showSignInWeb) {
         when {
+            showVisualizer -> showVisualizer = false
             showNowPlaying -> showNowPlaying = false
             showSignInWeb -> showSignInWeb = false
             backStack.isNotEmpty() -> backStack.removeAt(backStack.lastIndex)
@@ -189,8 +191,11 @@ fun SoundCloudRPCAndroidApp(initialJamDeepLink: String? = null, vm: AppViewModel
                     progress = progress,
                     isLiked = likedIds.contains(track.id),
                     trackParserEnabled = vm.prefs.trackParserEnabled,
-                    onTogglePlay = { vm.togglePlayPause() },
-                    onToggleLike = { vm.toggleLike(track.id) },
+                    onTogglePlay = {
+                        if (vm.jam.isGuestLocked) vm.showToast("Host controls playback in this Jam")
+                        else vm.togglePlayPause()
+                    },
+                    onToggleLike = { vm.toggleLike(track.id, track) },
                     onExpand = { showNowPlaying = true }
                 )
             }
@@ -238,8 +243,13 @@ fun SoundCloudRPCAndroidApp(initialJamDeepLink: String? = null, vm: AppViewModel
             NowPlayingOverlay(
                 vm = vm,
                 onDismiss = { showNowPlaying = false },
-                onOpenJam = { showJamSheet = true }
+                onOpenJam = { showJamSheet = true },
+                onOpenVisualizer = { showVisualizer = true }
             )
+        }
+
+        if (showVisualizer) {
+            VfdVisualizerOverlay(vm = vm, onDismiss = { showVisualizer = false })
         }
 
         if (showJamSheet) {
